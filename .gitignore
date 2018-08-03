@@ -108,4 +108,5 @@ ENV/
 checkpoints/
 logs/
 *.bck
+*.hdf5
 .DS_Store
