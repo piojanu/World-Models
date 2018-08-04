@@ -1,4 +1,25 @@
+import json
+
 from skimage.transform import resize
+
+
+class Config(object):
+    def __init__(self, config_path, is_debug):
+        """Loads custom configuration, unspecified parameters are taken from default configuration.
+
+        Args:
+            config_path (str): Path to .json file with custom configuration
+            is_debug (bool): Specify to enable debugging features
+        """
+
+        with open("config.json.dist") as f:
+            default_config = json.loads(f.read())
+        with open(config_path) as f:
+            custom_config = json.loads(f.read())
+
+        # Merging default and custom configs, for repeating keys second dict overwrites values
+        self.vae = {**default_config["vae_training"], **custom_config.get("vae_training", {})}
+        self.is_debug = is_debug
 
 
 def pong_state_processor(img):
