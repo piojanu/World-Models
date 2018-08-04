@@ -4,12 +4,13 @@ from skimage.transform import resize
 
 
 class Config(object):
-    def __init__(self, config_path, is_debug):
+    def __init__(self, config_path, is_debug, allow_render):
         """Loads custom configuration, unspecified parameters are taken from default configuration.
 
         Args:
             config_path (str): Path to .json file with custom configuration
             is_debug (bool): Specify to enable debugging features
+            allow_render (bool): Specify to enable render/plot features
         """
 
         with open("config.json.dist") as f:
@@ -20,6 +21,7 @@ class Config(object):
         # Merging default and custom configs, for repeating keys second dict overwrites values
         self.vae = {**default_config["vae_training"], **custom_config.get("vae_training", {})}
         self.is_debug = is_debug
+        self.allow_render = allow_render
 
 
 def pong_state_processor(img):
