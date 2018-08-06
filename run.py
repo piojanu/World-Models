@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 import click
+import datetime as dt
 import logging as log
 import numpy as np
-import os.path
+import os
 import third_party.humblerl as hrl
 
 from keras.callbacks import EarlyStopping, LambdaCallback, ModelCheckpoint
 from keras.utils import HDF5Matrix
 from third_party.humblerl.utils import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
-from utils import Config, pong_state_processor
+from utils import Config, boxing_state_processor as state_processor
 from vision import build_vae_model
 
 STATE_SHAPE = (64, 64, 3)
@@ -50,6 +51,11 @@ def train_vae(ctx, path):
         import matplotlib.gridspec as gridspec
         import matplotlib.pyplot as plt
 
+        # Check if destination dir exists
+        plots_dir = os.path.join(config.vae['logs_dir'], "plots")
+        if not os.path.exists(plots_dir):
+            os.makedirs(plots_dir)
+
         # Evaluate VAE at the end of epoch
         def plot_samples(epoch, logs):
             X_eval = X_train[:8]
@@ -58,8 +64,6 @@ def train_vae(ctx, path):
             samples = np.empty_like(np.concatenate((X_eval, pred)))
             samples[0::2] = X_eval
             samples[1::2] = pred
-
-            plt.close()
 
             _ = plt.figure(figsize=(4, 4))
             gs = gridspec.GridSpec(4, 4)
@@ -71,10 +75,13 @@ def train_vae(ctx, path):
                 ax.set_xticklabels([])
                 ax.set_yticklabels([])
                 ax.set_aspect('equal')
-                plt.imshow(sample.reshape(*STATE_SHAPE), cmap='Greys_r')
+                plt.imshow(sample.reshape(*STATE_SHAPE))
 
-            plt.draw()
-            plt.pause(0.001)
+            # Save figure to logs dir
+            plt.savefig(os.path.join(
+                plots_dir,
+                "vision_sample_{}".format(dt.datetime.now().strftime("%d-%mT%H:%M"))
+            ))
     else:
         def plot_samples(epoch, logs):
             pass
@@ -110,7 +117,7 @@ def train_vae(ctx, path):
 @click.option('-c', '--chunk_size', default=128, help='HDF5 chunk size (Default: 128)')
 @click.option('-t', '--state_dtype', default='u1', help='Numpy data type of state (Default: uint8)')
 # def record(path, n_games, game_name, chunk_size, state_dtype):
-def record(path, n_games, chunk_size, state_dtype, game_name="Pong-v0"):
+def record(path, n_games, chunk_size, state_dtype, game_name="Boxing-v0"):
     """Plays chosen game randomly and records transitions to hdf5 file in `PATH`."""
 
     # Create Gym environment, random agent and store to hdf5 callback
@@ -120,7 +127,7 @@ def record(path, n_games, chunk_size, state_dtype, game_name="Pong-v0"):
         env.valid_actions, STATE_SHAPE, path, chunk_size=chunk_size, dtype=state_dtype)
 
     # Resizes states to 64x64x3 with cropping
-    vision = hrl.Vision(pong_state_processor)
+    vision = hrl.Vision(state_processor)
 
     # Play `N` random games and gather data as it goes
     hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])

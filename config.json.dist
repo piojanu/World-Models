@@ -1,10 +1,11 @@
 {
     "vae_training": {
         "batch_size"       : 128,
-        "ckpt_path"        : "./checkpoints/best_vision.ckpt",
+        "ckpt_path"        : "./checkpoints_n_logs/best_vision.ckpt",
         "epochs"           : 100,
         "latent_space_dim" : 32,
         "learning_rate"    : 0.001,
+        "logs_dir"        : "./checkpoints_n_logs",
         "patience"         : 10
     }
 }

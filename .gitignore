@@ -107,6 +107,7 @@ ENV/
 *.json
 checkpoints/
 logs/
+checkpoints_n_logs/
 *.bck
 *.hdf5
 .DS_Store
