@@ -1,0 +1,3 @@
+[submodule "third_party/humblerl"]
+	path = third_party/humblerl
+	url = https://github.com/piojanu/humblerl.git
