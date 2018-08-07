@@ -98,11 +98,12 @@ class HDF5DataGenerator(Sequence):
         return X, y
 
 
-def pong_state_processor(img):
+def pong_state_processor(img, to_uint8=True):
     """Resize states to 64x64 with cropping suited for Pong.
 
     Args:
         img (np.ndarray): Image to crop and resize.
+        to_uint8 (bool): If cast img values to [0, 255] range.
 
     Return:
         np.ndarray: Cropped and reshaped to 64x64px image.
@@ -111,15 +112,19 @@ def pong_state_processor(img):
     # Crop image to 160x160x3, removes e.g. score bar
     img = img[35:195, :, :]
 
-    # Resize to 64x64 and cast to 0..255 values
-    return resize(img, (64, 64)) * 255
+    # Resize to 64x64 and cast to 0..255 values if requested
+    if to_uint8:
+        return resize(img, (64, 64)) * 255
+    else:
+        return resize(img, (64, 64))
 
 
-def boxing_state_processor(img):
+def boxing_state_processor(img, to_uint8=True):
     """Resize states to 64x64 with cropping suited for Boxing.
 
     Args:
         img (np.ndarray): Image to crop and resize.
+        to_uint8 (bool): If cast img values to [0, 255] range.
 
     Return:
         np.ndarray: Cropped and reshaped to 64x64px image.
@@ -128,5 +133,8 @@ def boxing_state_processor(img):
     # Crop image to 153x103x3, removes e.g. score bar
     img = img[30:183, 28:131, :]
 
-    # Resize to 64x64
-    return resize(img, (64, 64)) * 255
+    # Resize to 64x64 and cast to 0..255 values if requested
+    if to_uint8:
+        return resize(img, (64, 64)) * 255
+    else:
+        return resize(img, (64, 64))

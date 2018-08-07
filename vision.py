@@ -2,11 +2,30 @@ import logging as log
 
 import keras.backend as K
 
+from third_party.humblerl import Vision
 from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda, Reshape
 from keras.models import Model
 from keras.optimizers import Adam
 
 IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS = 64, 64, 3
+
+
+class VAEVision(Vision):
+    def __init__(self, model, state_processor_fn=None):
+        """Initialize vision processors.
+
+        Args:
+            model (keras.Model): Keras VAE encoder.
+            state_processor_fn (function): Function for state processing. It should
+                take raw environment state as an input and return processed state.
+                (Default: None which will result in passing raw state)
+        """
+
+        # NOTE: [0][0] <- it gets latent space mean (mu), first from batch
+        self._process_state = \
+            lambda state: model.predict(state_processor_fn(state).reshape(-1, 64, 64, 3))[0][0]
+        self._process_reward = lambda x: x
+
 
 def build_vae_model(vae_params):
     """Builds VAE encoder, decoder using Keras Model and VAE loss.
