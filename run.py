@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import click
+import h5py as h5
 import datetime as dt
 import logging as log
 import numpy as np
@@ -7,10 +8,9 @@ import os
 import third_party.humblerl as hrl
 
 from keras.callbacks import EarlyStopping, LambdaCallback, ModelCheckpoint
-from keras.utils import HDF5Matrix
 from third_party.humblerl.utils import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
-from utils import Config, boxing_state_processor as state_processor
+from utils import Config, HDF5DataGenerator, boxing_state_processor as state_processor
 from vision import build_vae_model
 
 STATE_SHAPE = (64, 64, 3)
@@ -38,8 +38,18 @@ def train_vae(ctx, path):
 
     config = ctx.obj
 
+    # Get dataset length and eight examples to evaluate VAE on
+    with h5.File(path, 'r') as hfile:
+        n_transitions = hfile.attrs['N_TRANSITIONS']
+        X_eval = hfile['states'][:8] / 255.
+
     # Get training data
-    X_train = HDF5Matrix(path, 'states', normalizer=lambda x: x / 255.)
+    train_gen = HDF5DataGenerator(path, 'states', 'states', batch_size=config.vae['batch_size'],
+                                  end=int(n_transitions * 0.8),
+                                  preprocess_fn=lambda X, y: (X / 255., y / 255.))
+    val_gen = HDF5DataGenerator(path, 'states', 'states', batch_size=config.vae['batch_size'],
+                                start=int(n_transitions * 0.8),
+                                preprocess_fn=lambda X, y: (X / 255., y / 255.))
 
     # Build VAE model
     vae, _, _ = build_vae_model(config.vae)
@@ -48,6 +58,8 @@ def train_vae(ctx, path):
     if config.allow_render:
         # ...plot first eight training examples with VAE reconstructions
         # at the beginning of every epoch
+        import matplotlib
+        matplotlib.use("Agg")
         import matplotlib.gridspec as gridspec
         import matplotlib.pyplot as plt
 
@@ -58,7 +70,6 @@ def train_vae(ctx, path):
 
         # Evaluate VAE at the end of epoch
         def plot_samples(epoch, logs):
-            X_eval = X_train[:8]
             pred = vae.predict(X_eval)
 
             samples = np.empty_like(np.concatenate((X_eval, pred)))
@@ -100,12 +111,13 @@ def train_vae(ctx, path):
         log.info("Loaded VAE model weights from: %s", config.vae['ckpt_path'])
 
     # Fit VAE model!
-    vae.fit(
-        X_train, X_train,
-        batch_size=config.vae['batch_size'],
+    vae.fit_generator(
+        generator=train_gen,
+        validation_data=val_gen,
         epochs=config.vae['epochs'],
-        shuffle='batch',
-        validation_split=0.2,
+        use_multiprocessing=True,
+        workers=1,  # NOTE: There is no need for more workers, you are disk IO bound (I suppose ...)
+        max_queue_size=100,
         callbacks=callbacks
     )
 

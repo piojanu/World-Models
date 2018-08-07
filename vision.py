@@ -1,13 +1,12 @@
-import keras.backend as K
 import logging as log
 
-from keras.layers import Activation, Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda, Reshape
+import keras.backend as K
+
+from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda, Reshape
 from keras.models import Model
 from keras.optimizers import Adam
 
-
 IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS = 64, 64, 3
-
 
 def build_vae_model(vae_params):
     """Builds VAE encoder, decoder using Keras Model and VAE loss.
