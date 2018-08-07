@@ -116,7 +116,13 @@ def train_vae(ctx, path):
         validation_data=val_gen,
         epochs=config.vae['epochs'],
         use_multiprocessing=True,
-        workers=1,  # NOTE: There is no need for more workers, you are disk IO bound (I suppose ...)
+        # TODO:  Make generator multi-thread.
+        # NOTE:  There is no need for more then one workers, we are disk IO bound (I suppose ...)
+        # NOTE2: h5py from conda should be threadsafe... but it apparently isn't and raises
+        #        `OSError: Can't read data (wrong B-tree signature)` sporadically if `workers` = 1
+        #        and always if `workers` > 1. That's why this generator needs to run in main thread
+        #        (`workers` = 0).
+        workers=0,
         max_queue_size=100,
         callbacks=callbacks
     )
@@ -154,7 +160,7 @@ def preproc_vae(ctx, model_path, in_path, out_path):
     encoded_states = encoder.predict_generator(
         generator=s_gen,
         use_multiprocessing=True,
-        workers=1,
+        workers=0,
         max_queue_size=100,
         verbose=1
     )[0]
@@ -163,7 +169,7 @@ def preproc_vae(ctx, model_path, in_path, out_path):
     encoded_next_states = encoder.predict_generator(
         generator=ns_gen,
         use_multiprocessing=True,
-        workers=1,
+        workers=0,
         max_queue_size=100,
         verbose=1
     )[0]
