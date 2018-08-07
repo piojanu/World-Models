@@ -93,6 +93,7 @@ def train_vae(ctx, path):
                 plots_dir,
                 "vision_sample_{}".format(dt.datetime.now().strftime("%d-%mT%H:%M"))
             ))
+            plt.close()
     else:
         def plot_samples(epoch, logs):
             pass
