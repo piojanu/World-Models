@@ -123,6 +123,62 @@ def train_vae(ctx, path):
 
 
 @cli.command()
+@click.pass_context
+@click.argument('model_path', type=click.Path(exists=True), required=True)
+@click.argument('in_path', type=click.Path(exists=True), required=True)
+@click.argument('out_path', type=click.Path(), required=True)
+def preproc_vae(ctx, model_path, in_path, out_path):
+    """Preprocess data at 'IN_PATH' using VAE model at `MODEL_PATH` so it can be used in Memory 
+    module training. Save preprocessed data at `OUT_PATH` as numpy array."""
+
+    config = ctx.obj
+
+    # Get training data
+    s_gen = HDF5DataGenerator(in_path, 'states', 'states', batch_size=config.vae['batch_size'],
+                              preprocess_fn=lambda X, y: (X / 255., y / 255.))
+    ns_gen = HDF5DataGenerator(in_path, 'next_states', 'states', batch_size=config.vae['batch_size'],
+                               preprocess_fn=lambda X, y: (X / 255., y / 255.))
+
+    # Build VAE model
+    vae, encoder, _ = build_vae_model(config.vae)
+
+    # Load checkpoint if available
+    if os.path.exists(config.vae['ckpt_path']):
+        vae.load_weights(config.vae['ckpt_path'])
+        log.info("Loaded VAE model weights from: %s", config.vae['ckpt_path'])
+    else:
+        raise ValueError("VAE model weights from \"{}\" path doesn't exist!".format(model_path))
+
+    # Infer VAE model!
+    log.info("Encode states...")
+    encoded_states = encoder.predict_generator(
+        generator=s_gen,
+        use_multiprocessing=True,
+        workers=1,
+        max_queue_size=100,
+        verbose=1
+    )[0]
+
+    log.info("Encode next states...")
+    encoded_next_states = encoder.predict_generator(
+        generator=ns_gen,
+        use_multiprocessing=True,
+        workers=1,
+        max_queue_size=100,
+        verbose=1
+    )[0]
+
+    # Get actions
+    log.info("Get actions...")
+    with h5.File(in_path, 'r') as hfile:
+        transitions = hfile['transitions']
+        actions = transitions[:, 1]
+
+    # Save dataset
+    np.savez(out_path, states=encoded_states, actions=actions, next_states=encoded_next_states)
+
+
+@cli.command()
 @click.argument('path', type=click.Path(), required=True)
 @click.option('-n', '--n_games', default=10000, help='Number of games to play (Default: 10000)')
 # @click.option('-g', '--game_name', default='Pong-v0', help='OpenAI Gym game name (Default: Pong-v0)')
