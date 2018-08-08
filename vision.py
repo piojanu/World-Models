@@ -7,15 +7,14 @@ from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda,
 from keras.models import Model
 from keras.optimizers import Adam
 
-IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS = 64, 64, 3
-
 
 class VAEVision(Vision):
-    def __init__(self, model, state_processor_fn=None):
+    def __init__(self, model, input_shape, state_processor_fn=None):
         """Initialize vision processors.
 
         Args:
             model (keras.Model): Keras VAE encoder.
+            input_shape (tuple): Input to model shape (state shape).
             state_processor_fn (function): Function for state processing. It should
                 take raw environment state as an input and return processed state.
                 (Default: None which will result in passing raw state)
@@ -23,15 +22,16 @@ class VAEVision(Vision):
 
         # NOTE: [0][0] <- it gets latent space mean (mu), first from batch
         self._process_state = \
-            lambda state: model.predict(state_processor_fn(state).reshape(-1, 64, 64, 3))[0][0]
+            lambda state: model.predict(state_processor_fn(state).reshape(-1, *input_shape))[0][0]
         self._process_reward = lambda x: x
 
 
-def build_vae_model(vae_params):
+def build_vae_model(vae_params, input_shape):
     """Builds VAE encoder, decoder using Keras Model and VAE loss.
 
     Args:
         vae_params (dict): VAE parameters from .json config.
+        input_shape (tuple): Input to encoder shape (state shape).
 
     Returns:
         keras.models.Model: Compiled VAE, ready for training.
@@ -44,7 +44,7 @@ def build_vae_model(vae_params):
 
     ### Encoder img -> mu, logvar ###
 
-    encoder_input = Input(shape=(IMG_HEIGHT, IMG_WIDTH, IMG_CHANNELS))
+    encoder_input = Input(shape=input_shape)
 
     h = Conv2D(32, activation='relu', kernel_size=4, strides=2)(encoder_input)  # -> 31x31x32
     h = Conv2D(64, activation='relu', kernel_size=4, strides=2)(h)              # -> 14x14x64

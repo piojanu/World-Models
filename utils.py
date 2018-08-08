@@ -24,6 +24,7 @@ class Config(object):
             custom_config = json.loads(f.read())
 
         # Merging default and custom configs, for repeating keys second dict overwrites values
+        self.general = {**default_config["general"], **custom_config.get("general", {})}
         self.vae = {**default_config["vae_training"], **custom_config.get("vae_training", {})}
         self.is_debug = is_debug
         self.allow_render = allow_render
@@ -98,43 +99,37 @@ class HDF5DataGenerator(Sequence):
         return X, y
 
 
-def pong_state_processor(img, to_uint8=True):
+def pong_state_processor(img, state_shape):
     """Resize states to 64x64 with cropping suited for Pong.
 
     Args:
         img (np.ndarray): Image to crop and resize.
-        to_uint8 (bool): If cast img values to [0, 255] range.
+        state_shape (tuple): Output shape.
 
     Return:
-        np.ndarray: Cropped and reshaped to 64x64px image.
+        np.ndarray: Cropped and reshaped to `state_shape` image.
     """
 
     # Crop image to 160x160x3, removes e.g. score bar
     img = img[35:195, :, :]
 
     # Resize to 64x64 and cast to 0..255 values if requested
-    if to_uint8:
-        return resize(img, (64, 64)) * 255
-    else:
-        return resize(img, (64, 64))
+    return resize(img, state_shape) * 255
 
 
-def boxing_state_processor(img, to_uint8=True):
+def boxing_state_processor(img, state_shape):
     """Resize states to 64x64 with cropping suited for Boxing.
 
     Args:
         img (np.ndarray): Image to crop and resize.
-        to_uint8 (bool): If cast img values to [0, 255] range.
+        state_shape (tuple): Output shape.
 
     Return:
-        np.ndarray: Cropped and reshaped to 64x64px image.
+        np.ndarray: Cropped and reshaped to `state_shape` image.
     """
 
     # Crop image to 153x103x3, removes e.g. score bar
     img = img[30:183, 28:131, :]
 
-    # Resize to 64x64 and cast to 0..255 values if requested
-    if to_uint8:
-        return resize(img, (64, 64)) * 255
-    else:
-        return resize(img, (64, 64))
+    # Resize to 64x64 and cast to 0..255 values
+    return resize(img, state_shape) * 255

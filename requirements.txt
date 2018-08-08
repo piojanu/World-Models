@@ -1,3 +1,6 @@
 click
 numpy
 scikit-image
+keras
+tensorflow
+h5py

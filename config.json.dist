@@ -1,11 +1,15 @@
 {
+    "general": {
+        "game_name"        : "Boxing-v0",
+        "state_shape"      : [64, 64, 3]
+    },
     "vae_training": {
         "batch_size"       : 256,
         "ckpt_path"        : "./checkpoints_n_logs/best_vision.ckpt",
         "epochs"           : 100,
         "latent_space_dim" : 16,
         "learning_rate"    : 0.001,
-        "logs_dir"        : "./checkpoints_n_logs",
+        "logs_dir"         : "./checkpoints_n_logs",
         "patience"         : 3
     }
 }

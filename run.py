@@ -7,13 +7,13 @@ import numpy as np
 import os
 import third_party.humblerl as hrl
 
+from functools import partial
 from keras.callbacks import EarlyStopping, LambdaCallback, ModelCheckpoint
+from memory import StoreTrajectories2npz
 from third_party.humblerl.utils import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
 from utils import Config, HDF5DataGenerator, boxing_state_processor as state_processor
-from vision import build_vae_model
-
-STATE_SHAPE = (64, 64, 3)
+from vision import build_vae_model, VAEVision
 
 
 @click.group()
@@ -28,6 +28,30 @@ def cli(ctx, config_path, debug, render):
 
     # Load configuration from .json file into ctx object
     ctx.obj = Config(config_path, debug, render)
+
+
+@cli.command()
+@click.pass_context
+@click.argument('path', type=click.Path(), required=True)
+@click.option('-n', '--n_games', default=10000, help='Number of games to play (Default: 10000)')
+@click.option('-c', '--chunk_size', default=128, help='HDF5 chunk size (Default: 128)')
+@click.option('-t', '--state_dtype', default='u1', help='Numpy data type of state (Default: uint8)')
+def record_vae(ctx, path, n_games, chunk_size, state_dtype):
+    """Plays chosen game randomly and records transitions to hdf5 file in `PATH`."""
+
+    config = ctx.obj
+
+    # Create Gym environment, random agent and store to hdf5 callback
+    env = hrl.create_gym(config.general['game_name'])
+    mind = RandomAgent(env.valid_actions)
+    store_callback = StoreTransitions2Hdf5(
+        env.valid_actions, config.general['state_shape'], path, chunk_size=chunk_size, dtype=state_dtype)
+
+    # Resizes states to `state_shape` with cropping
+    vision = hrl.Vision(partial(state_processor, state_shape=config.general['state_shape']))
+
+    # Play `N` random games and gather data as it goes
+    hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])
 
 
 @cli.command()
@@ -52,7 +76,7 @@ def train_vae(ctx, path):
                                 preprocess_fn=lambda X, y: (X / 255., y / 255.))
 
     # Build VAE model
-    vae, _, _ = build_vae_model(config.vae)
+    vae, _, _ = build_vae_model(config.vae, config.general['state_shape'])
 
     # If render features enabled...
     if config.allow_render:
@@ -86,7 +110,7 @@ def train_vae(ctx, path):
                 ax.set_xticklabels([])
                 ax.set_yticklabels([])
                 ax.set_aspect('equal')
-                plt.imshow(sample.reshape(*STATE_SHAPE))
+                plt.imshow(sample.reshape(*config.general['state_shape']))
 
             # Save figure to logs dir
             plt.savefig(os.path.join(
@@ -131,78 +155,37 @@ def train_vae(ctx, path):
 
 @cli.command()
 @click.pass_context
-@click.argument('model_path', type=click.Path(exists=True), required=True)
-@click.argument('in_path', type=click.Path(exists=True), required=True)
-@click.argument('out_path', type=click.Path(), required=True)
-def preproc_vae(ctx, model_path, in_path, out_path):
-    """Preprocess data at 'IN_PATH' using VAE model at `MODEL_PATH` so it can be used in Memory 
-    module training. Save preprocessed data at `OUT_PATH` as numpy array."""
-
+@click.argument('path', type=click.Path(), required=True)
+@click.option('-m', '--model_path', default=None,
+              help='Path to VAE ckpt. Taken from .json config if `None` (Default: None)')
+@click.option('-n', '--n_games', default=10000, help='Number of games to play (Default: 10000)')
+def record_mem(ctx, path, model_path, n_games):
+    """Plays chosen game randomly and records preprocessed with VAE (loaded from `--model_path`
+    or config) states, next_states and actions trajectories to numpy archive file in `PATH`."""
+    
     config = ctx.obj
 
-    # Get training data
-    s_gen = HDF5DataGenerator(in_path, 'states', 'states', batch_size=config.vae['batch_size'],
-                              preprocess_fn=lambda X, y: (X / 255., y / 255.))
-    ns_gen = HDF5DataGenerator(in_path, 'next_states', 'states', batch_size=config.vae['batch_size'],
-                               preprocess_fn=lambda X, y: (X / 255., y / 255.))
+    # Create Gym environment, random agent and store to hdf5 callback
+    env = hrl.create_gym(config.general['game_name'])
+    mind = RandomAgent(env.valid_actions)
+    store_callback = StoreTrajectories2npz(path)
 
     # Build VAE model
-    vae, encoder, _ = build_vae_model(config.vae)
+    vae, encoder, _ = build_vae_model(config.vae, config.general['state_shape'])
 
-    # Load checkpoint if available
-    if os.path.exists(config.vae['ckpt_path']):
-        vae.load_weights(config.vae['ckpt_path'])
-        log.info("Loaded VAE model weights from: %s", config.vae['ckpt_path'])
+    # Load checkpoint
+    if model_path is None:
+        model_path = config.vae['ckpt_path']
+
+    if os.path.exists(model_path):
+        vae.load_weights(model_path)
+        log.info("Loaded VAE model weights from: %s", model_path)
     else:
         raise ValueError("VAE model weights from \"{}\" path doesn't exist!".format(model_path))
-
-    # Infer VAE model!
-    log.info("Encode states...")
-    encoded_states = encoder.predict_generator(
-        generator=s_gen,
-        use_multiprocessing=True,
-        workers=0,
-        max_queue_size=100,
-        verbose=1
-    )[0]
-
-    log.info("Encode next states...")
-    encoded_next_states = encoder.predict_generator(
-        generator=ns_gen,
-        use_multiprocessing=True,
-        workers=0,
-        max_queue_size=100,
-        verbose=1
-    )[0]
-
-    # Get actions
-    log.info("Get actions...")
-    with h5.File(in_path, 'r') as hfile:
-        transitions = hfile['transitions']
-        actions = transitions[:, 1]
-
-    # Save dataset
-    np.savez(out_path, states=encoded_states, actions=actions, next_states=encoded_next_states)
-
-
-@cli.command()
-@click.argument('path', type=click.Path(), required=True)
-@click.option('-n', '--n_games', default=10000, help='Number of games to play (Default: 10000)')
-# @click.option('-g', '--game_name', default='Pong-v0', help='OpenAI Gym game name (Default: Pong-v0)')
-@click.option('-c', '--chunk_size', default=128, help='HDF5 chunk size (Default: 128)')
-@click.option('-t', '--state_dtype', default='u1', help='Numpy data type of state (Default: uint8)')
-# def record(path, n_games, game_name, chunk_size, state_dtype):
-def record(path, n_games, chunk_size, state_dtype, game_name="Boxing-v0"):
-    """Plays chosen game randomly and records transitions to hdf5 file in `PATH`."""
-
-    # Create Gym environment, random agent and store to hdf5 callback
-    env = hrl.create_gym(game_name)
-    mind = RandomAgent(env.valid_actions)
-    store_callback = StoreTransitions2Hdf5(
-        env.valid_actions, STATE_SHAPE, path, chunk_size=chunk_size, dtype=state_dtype)
-
-    # Resizes states to 64x64x3 with cropping
-    vision = hrl.Vision(state_processor)
+    
+    # Resizes states to `state_shape` with cropping and encode to latent space
+    vision = VAEVision(encoder, config.general['state_shape'], state_processor_fn=
+                       partial(state_processor, state_shape=config.general['state_shape'])) 
 
     # Play `N` random games and gather data as it goes
     hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])
