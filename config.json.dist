@@ -5,11 +5,22 @@
     },
     "vae_training": {
         "batch_size"       : 256,
-        "ckpt_path"        : "./checkpoints_n_logs/best_vision.ckpt",
-        "epochs"           : 100,
         "latent_space_dim" : 16,
+        "epochs"           : 100,
         "learning_rate"    : 0.001,
-        "logs_dir"         : "./checkpoints_n_logs",
-        "patience"         : 3
+        "patience"         : 5,
+        "ckpt_path"        : "./checkpoints_n_logs/best_vision.ckpt",
+        "logs_dir"         : "./checkpoints_n_logs"
+    },
+    "rnn_training": {
+        "batch_size"       : 256,
+        "sequence_size"    : 500,
+        "hidden_units"     : 64,
+        "n_gaussians"      : 4,
+        "epochs"           : 100,
+        "learning_rate"    : 0.001,
+        "patience"         : 5,
+        "ckpt_path"        : "./checkpoints_n_logs/best_memory.ckpt",
+        "logs_dir"         : "./checkpoints_n_logs"
     }
 }
