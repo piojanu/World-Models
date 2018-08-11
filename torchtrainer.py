@@ -185,6 +185,39 @@ class ModelCheckpoint(Callback):
                 self.trainer.save_ckpt(self.path)
 
 
+class MultiDataset(torch.utils.data.Dataset):
+    """Multi input/output dataset."""
+
+    def __init__(self, data, targets):
+        """Initialize MultiDataset.
+
+        Args:
+            data (torch.Tensor or list): List of tensors 'N x *' where 'N' is number of examples
+                and '*' indicates any number of dimensions.
+            target (torch.Tensor or list): List of tensors 'N x *' where 'N' is number of examples
+                and '*' indicates any number of dimensions.
+
+        Note:
+            Tensors should have the same size of the first dimension
+        """
+
+        if not isinstance(data, (list, tuple)):
+            self.data = [torch.from_numpy(data)]
+        else:
+            self.data = [torch.from_numpy(d) for d in data]
+
+        if not isinstance(targets, (list, tuple)):
+            self.targets = [torch.from_numpy(targets)]
+        else:
+            self.targets = [torch.from_numpy(t) for t in targets]
+
+    def __getitem__(self, index):
+        return tuple(tensor[index] for tensor in self.data), tuple(tensor[index] for tensor in self.targets)
+
+    def __len__(self):
+        return self.data[0].size(0)
+
+
 class TorchTrainer(object):
     """High-level toolbox to train, evaluate and infer PyTorch nn.Module."""
 
@@ -245,7 +278,7 @@ class TorchTrainer(object):
 
         # Create data loader
         data_loader = torch.utils.data.DataLoader(
-            torch.utils.data.TensorDataset(data, target),
+            MultiDataset(data, target),
             batch_size=batch_size,
             shuffle=False
         )
@@ -294,41 +327,27 @@ class TorchTrainer(object):
                 * 1 - show progress bar, (<- Default)
                 * 0 - show nothing.
             callbacks (list of Callback): Event train, epoch and batch events listeners.
-            validation_split (float): How big part of data put away for validation. The validation
-                data is selected from the last samples in the `data` and `target` provided,
-                before shuffling (Default: 0.0)
-            validation_data (tuple): Tuple: (val_data, val_targets). Overwrites `validation_split`.
+            validation_data (tuple): Tuple: (val_data, val_targets). Enables evaluation on val. data.
             shuffle (bool): If randomize data order in each epoch. (Default: True)
             initial_epoch (int): From which number start to count epochs. (Default: 0)
         """
 
-        # Get validation data
-        if validation_data is not None:
-            X_train, y_train = data, target
-            X_val, y_val = validation_data
-        elif validation_split > 0.0 and validation_split < 1.0:
-            split = int(data.shape[0] * validation_split)
-            X_train, y_train = data[:split], target[:split]
-            X_val, y_val = data[split:], target[split:]
-        else:
-            X_train, y_train = data, target
-            X_val, y_val = None, None
-
         # Create training data loader
         data_loader = torch.utils.data.DataLoader(
-            torch.utils.data.TensorDataset(X_train, y_train),
+            MultiDataset(data, target),
             batch_size=batch_size,
             shuffle=shuffle
         )
 
         # Create validation data loader if there is given data
-        validation_loader = None
-        if X_val is not None and y_val is not None:
+        if validation_data is not None:
             validation_loader = torch.utils.data.DataLoader(
-                torch.utils.data.TensorDataset(X_val, y_val),
+                MultiDataset(*validation_data),
                 batch_size=batch_size,
                 shuffle=False
             )
+        else:
+            validation_loader = None
 
         self.fit_loader(data_loader=data_loader, validation_loader=validation_loader,
                         epochs=epochs, verbose=verbose, callbacks=callbacks,
@@ -418,7 +437,8 @@ class TorchTrainer(object):
 
         self._early_stop = True
 
-    def _average_metrics(self, avg, tmp, iter_t):
+    @staticmethod
+    def _average_metrics(avg, tmp, iter_t):
         """Iteratively average metrics dictionary values.
 
         Args:
@@ -445,16 +465,21 @@ class TorchTrainer(object):
             torch.Tensor: Module loss on given batch.
         """
 
-        pred = self.model(data)
+        # Unpack if target is list with only one element
+        if isinstance(target, (list, tuple)) and len(target) == 1:
+            target = target[0]
+
+        pred = self.model(*data)
         loss = self.loss(pred, target)
 
         results = {'loss': loss.item()}
         for key, func in self.metrics.items():
             results[key] = func(pred, target).item()
-            
+
         return results, loss
 
-    def _merge_results(self, train_r, val_r):
+    @staticmethod
+    def _merge_results(train_r, val_r):
         """Merge training and validation metrics evaluation results.
 
         It adds 'val_' prefix before validation results keys.
@@ -521,10 +546,11 @@ if __name__ == "__main__":
     # Instantiate Torch Trainer!
     net = TorchTrainer(Net(data.shape[1], NUM_CLASSES))
 
-    # Compile trainer
+    # Create accuracy metric
     def acc(pred, target):
         return torch.mean((torch.max(pred, 1)[1] == target).type(torch.FloatTensor))
 
+    # Compile trainer
     net.compile(
         optimizer=optim.SGD(net.model.parameters(), lr=1e-3, momentum=0.9),
         loss=nn.CrossEntropyLoss(),
@@ -533,9 +559,11 @@ if __name__ == "__main__":
 
     # Fit module to training data
     net.fit(
-        torch.FloatTensor(X_train), torch.LongTensor(y_train),
+        # Cast to appropriate type as Tensors are created with `torch.from_numpy(...)`.
+        # See documentation: https://pytorch.org/docs/stable/torch.html#torch.from_numpy
+        X_train.astype(np.float32), y_train.astype(np.long),
         epochs=100,
-        validation_data=(torch.FloatTensor(X_val), torch.LongTensor(y_val)),
+        validation_data=(X_val.astype(np.float32), y_val.astype(np.long)),
         callbacks=[
             EarlyStopping(verbose=1),
             ModelCheckpoint("/tmp/best_digits.ckpt", save_best=True, verbose=1)
@@ -543,5 +571,5 @@ if __name__ == "__main__":
     )
 
     # Evaluate module on test data
-    metrics = net.evaluate(torch.FloatTensor(X_test), torch.LongTensor(y_test), verbose=1)
+    metrics = net.evaluate(X_test.astype(np.float32), y_test.astype(np.long), verbose=1)
     print("Final weights loss: {}, accuracy: {}".format(metrics['loss'], metrics['acc']))
