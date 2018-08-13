@@ -8,8 +8,7 @@ import os
 import third_party.humblerl as hrl
 
 from functools import partial
-from keras.callbacks import EarlyStopping, LambdaCallback, ModelCheckpoint
-from memory import StoreTrajectories2npz
+from memory import build_rnn_model, MDNDataset, StoreTrajectories2npz
 from third_party.humblerl.utils import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
 from utils import Config, HDF5DataGenerator, boxing_state_processor as state_processor
@@ -60,6 +59,7 @@ def record_vae(ctx, path, n_games, chunk_size, state_dtype):
 def train_vae(ctx, path):
     """Train VAE model as specified in .json config with data at `PATH`."""
 
+    from keras.callbacks import EarlyStopping, LambdaCallback, ModelCheckpoint
     config = ctx.obj
 
     # Get dataset length and eight examples to evaluate VAE on
@@ -162,7 +162,7 @@ def train_vae(ctx, path):
 def record_mem(ctx, path, model_path, n_games):
     """Plays chosen game randomly and records preprocessed with VAE (loaded from `--model_path`
     or config) states, next_states and actions trajectories to numpy archive file in `PATH`."""
-    
+
     config = ctx.obj
 
     # Create Gym environment, random agent and store to hdf5 callback
@@ -182,13 +182,61 @@ def record_mem(ctx, path, model_path, n_games):
         log.info("Loaded VAE model weights from: %s", model_path)
     else:
         raise ValueError("VAE model weights from \"{}\" path doesn't exist!".format(model_path))
-    
+
     # Resizes states to `state_shape` with cropping and encode to latent space
-    vision = VAEVision(encoder, config.general['state_shape'], state_processor_fn=
-                       partial(state_processor, state_shape=config.general['state_shape'])) 
+    vision = VAEVision(encoder, config.general['state_shape'], state_processor_fn=partial(
+        state_processor, state_shape=config.general['state_shape']))
 
     # Play `N` random games and gather data as it goes
     hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])
+
+
+@cli.command()
+@click.pass_context
+@click.argument('path', type=click.Path(exists=True), required=True)
+def train_mem(ctx, path):
+    """Train MDN-RNN model as specified in .json config with data at `PATH`."""
+
+    from third_party.torchtrainer import EarlyStopping, LambdaCallback, ModelCheckpoint
+    from torch.utils.data import DataLoader
+    config = ctx.obj
+
+    # Load data
+    data_npz = np.load(path)
+
+    states = data_npz["states"].astype(np.float32)
+    actions = data_npz["actions"].astype(np.int)
+    lengths = data_npz["lengths"].astype(np.int)
+
+    # Create training DataLoader
+    data_loader = DataLoader(
+        MDNDataset(states, actions, lengths, config.rnn['sequence_len']),
+        batch_size=config.rnn['batch_size'],
+        shuffle=True,
+        pin_memory=True
+    )
+
+    # Build model
+    rnn = build_rnn_model(config.rnn, states.shape[2], np.max(actions) + 1)
+
+    # Initialize callbacks
+    callbacks = [
+        # EarlyStopping(patience=config.rnn['patience']),
+        LambdaCallback(on_batch_begin=lambda b: rnn.model.init_hidden(config.rnn['batch_size'])),
+        ModelCheckpoint(config.rnn['ckpt_path'], save_best=False, verbose=1)
+    ]
+
+    # Load checkpoint if available
+    if os.path.exists(config.rnn['ckpt_path']):
+        rnn.load_ckpt(config.rnn['ckpt_path'])
+        log.info("Loaded MDN-RNN model weights from: %s", config.rnn['ckpt_path'])
+
+    # Fit MDN-RNN model!
+    rnn.fit_loader(
+        data_loader,
+        epochs=config.rnn['epochs'],
+        callbacks=callbacks
+    )
 
 
 if __name__ == '__main__':

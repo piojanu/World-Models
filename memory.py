@@ -1,7 +1,16 @@
+import logging as log
+
+
 import numpy as np
 import os.path
+import torch
+import torch.nn as nn
+import torch.optim as optim
 
 from third_party.humblerl import Callback
+from third_party.torchtrainer import TorchTrainer
+from torch.distributions import Normal
+from torch.utils.data import Dataset
 
 
 class StoreTrajectories2npz(Callback):
@@ -50,3 +59,137 @@ class StoreTrajectories2npz(Callback):
 
         np.savez(os.path.splitext(self.path)[0],  # Strip extension off path (if there is one)
                  states=states, actions=actions, lengths=lengths)
+
+
+class MDNDataset(Dataset):
+    """Dataset of sequential data to train MDN-RNN."""
+
+    def __init__(self, states, actions, lengths, sequence_len):
+        """Initialize MDNDataset.
+
+        Args:
+            states (np.ndarray): Array of env states with shape 'N x S x *' where 'N' is number of
+                examples, 'S' is max sequence length and '*' indicates any number of dimensions.
+            actions (np.ndarray): Array of actions numbers with shape 'N x S x 1' where 'N' is
+                number of examples, 'S' is max sequence length.
+            lengths (np.ndarray): Array of sequences true lengths with shape 'N x 1' where 'N' is
+                number of examples.
+            sequence_len (int): Desired output sequence len.
+
+        Note:
+            Arrays should have the same size of the first dimension and their type should be the
+            same as desired Tensor type.
+        """
+
+        self.states = states
+        self.actions = actions
+        self.lengths = lengths
+        self.sequence_len = sequence_len
+
+    def __getitem__(self, idx):
+        """Get sequence at random starting position of given sequence length from episode `idx`."""
+        offset = 1
+
+        states = np.zeros((self.sequence_len, self.states.shape[2]), dtype=self.states.dtype)
+        next_states = np.zeros((self.sequence_len, self.states.shape[2]), dtype=self.states.dtype)
+        actions = np.zeros((self.sequence_len, 1), dtype=self.actions.dtype)
+
+        length = self.lengths[idx]
+        # '- offset' because next_states is offset by 'offset'
+        start = np.random.randint(length - self.sequence_len - offset)
+
+        states = self.states[idx, start:start + self.sequence_len]
+        next_states = self.states[idx, start + offset:start + self.sequence_len + offset]
+        actions = self.actions[idx, start:start + self.sequence_len]
+
+        return [torch.from_numpy(states), torch.from_numpy(actions)], [torch.from_numpy(next_states)]
+
+    def __len__(self):
+        return self.states.shape[0]
+
+
+class MDN(nn.Module):
+    def __init__(self, hidden_units, latent_dim, action_size, temperature, n_gaussians, num_layers=1):
+        super(MDN, self).__init__()
+
+        self.hidden_units = hidden_units
+        self.latent_dim = latent_dim
+        self.temperature = temperature
+        self.n_gaussians = n_gaussians
+        self.num_layers = num_layers
+
+        self.embedding = nn.Embedding.from_pretrained(torch.eye(int(action_size)))
+        self.lstm = nn.LSTM(input_size=(latent_dim + action_size),
+                            hidden_size=hidden_units,
+                            num_layers=num_layers,
+                            batch_first=True)
+        self.pi = nn.Linear(hidden_units, n_gaussians * latent_dim)
+        self.mu = nn.Linear(hidden_units, n_gaussians * latent_dim)
+        self.logsigma = nn.Linear(hidden_units, n_gaussians * latent_dim)
+
+    def forward(self, latent, action):
+        self.lstm.flatten_parameters()
+        sequence_len = latent.size(1)
+
+        x = torch.cat((latent, self.embedding(action).squeeze(dim=2)), dim=2)
+
+        h, self.hidden = self.lstm(x, self.hidden)
+
+        pi = self.pi(h).view(-1, sequence_len, self.n_gaussians, self.latent_dim) / self.temperature
+        pi = torch.softmax(pi, dim=2)
+
+        logsigma = self.logsigma(h).view(-1, sequence_len, self.n_gaussians, self.latent_dim)
+        sigma = torch.exp(logsigma)
+
+        mu = self.mu(h).view(-1, sequence_len, self.n_gaussians, self.latent_dim)
+
+        return mu, sigma, pi
+
+    def init_hidden(self, batch_size):
+        device = next(self.parameters()).device
+
+        self.hidden = (
+            torch.zeros(self.num_layers, batch_size, self.hidden_units, device=device),
+            torch.zeros(self.num_layers, batch_size, self.hidden_units, device=device)
+        )
+
+
+def build_rnn_model(rnn_params, latent_dim, action_size):
+    """Builds MDN-RNN memory module, which model time dependencies.
+
+    Args:
+        rnn_params (dict): MDN-RNN parameters from .json config.
+        latent_dim (int): Latent space dimensionality.
+        action_size (int): Size of action shape.
+
+    Returns:
+        TorchTrainer: Compiled MDN-RNN model wrapped in TorchTrainer, ready for training.
+    """
+
+    use_cuda = torch.cuda.is_available()
+
+    def mdn_loss_function(pred, target):
+        """Mixed Density Network loss function, see:
+        https://mikedusenberry.com/mixture-density-networks"""
+
+        mu, sigma, pi = pred
+
+        sequence_len = mu.size(1)
+        latent_dim = mu.size(3)
+        target = target.view(-1, sequence_len, 1, latent_dim)
+
+        loss = Normal(loc=mu, scale=sigma)
+        loss = torch.exp(loss.log_prob(target))
+        loss = torch.sum(loss * pi, dim=2)
+        loss = -torch.log(loss + 1e-9)
+
+        return torch.mean(loss)
+
+    mdn = TorchTrainer(MDN(rnn_params['hidden_units'], latent_dim, action_size,
+                           rnn_params['temperature'], rnn_params['n_gaussians']),
+                       device_name='cuda' if use_cuda else 'cpu')
+
+    mdn.compile(optimizer=optim.Adam(mdn.model.parameters(), lr=rnn_params['learning_rate']),
+                loss=mdn_loss_function)
+
+    return mdn

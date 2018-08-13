@@ -137,11 +137,11 @@ class LambdaCallback(Callback):
                  on_epoch_begin=None, on_epoch_end=None,
                  on_batch_begin=None, on_batch_end=None):
 
-        self.on_train_begin = on_train_begin if on_train_begin is not None else lambda m: None
-        self.on_train_end = on_train_end if on_train_end is not None else lambda m: None
-        self.on_epoch_begin = on_epoch_begin if on_epoch_begin is not None else lambda e, m: None
+        self.on_train_begin = on_train_begin if on_train_begin is not None else lambda: None
+        self.on_train_end = on_train_end if on_train_end is not None else lambda a: None
+        self.on_epoch_begin = on_epoch_begin if on_epoch_begin is not None else lambda e: None
         self.on_epoch_end = on_epoch_end if on_epoch_end is not None else lambda e, m: None
-        self.on_batch_begin = on_batch_begin if on_batch_begin is not None else lambda b, m: None
+        self.on_batch_begin = on_batch_begin if on_batch_begin is not None else lambda b: None
         self.on_batch_end = on_batch_end if on_batch_end is not None else lambda b, m: None
 
 
@@ -192,9 +192,9 @@ class MultiDataset(torch.utils.data.Dataset):
         """Initialize MultiDataset.
 
         Args:
-            data (torch.Tensor or list): List of tensors 'N x *' where 'N' is number of examples
+            data (np.ndarray or list): List of arrays 'N x *' where 'N' is number of examples
                 and '*' indicates any number of dimensions.
-            target (torch.Tensor or list): List of tensors 'N x *' where 'N' is number of examples
+            target (np.ndarray or list): List of arrays 'N x *' where 'N' is number of examples
                 and '*' indicates any number of dimensions.
 
         Note:
@@ -221,19 +221,20 @@ class MultiDataset(torch.utils.data.Dataset):
 class TorchTrainer(object):
     """High-level toolbox to train, evaluate and infer PyTorch nn.Module."""
 
-    def __init__(self, model):
+    def __init__(self, model, device_name='cpu'):
         """Initialize TorchTrainer.
 
         Args:
             model (torch.nn.Module): PyTorch neural net module.
-            DataTensor (torch.Tensor): PyTorch tensor type to use as data type.
-            TargetTensor (torch.Tensor): PyTorch tensor type to use as target type.
+            device_name (str): The desired device of data/target tensors ('cpu' or 'cuda' for GPU).
+                (Default: cpu)
         """
 
         if not isinstance(model, nn.Module):
             raise ValueError("Model needs to inherit from torch.nn.Module!")
 
-        self.model = model
+        self.device = torch.device(device_name)
+        self.model = model.to(self.device, non_blocking=True)
 
         self._early_stop = False
         self._is_compiled = False
@@ -264,12 +265,12 @@ class TorchTrainer(object):
         """Evaluate PyTorch module on dataset.
 
         Args:
-            data (torch.Tensor or list): Data to evaluate on or list of multiple data tensors.
-                Tensor shape should be 'N x *' where 'N' is number of examples and '*' indicates
-                any number of dimensions.
-            target (torch.Tensor or list): Target to evaluate on or list of multiple target tensors.
-                Tensor shape should be 'N x *' where 'N' is number of examples and '*' indicates
-                any number of dimensions.
+            data (np.ndarray or list): Data to evaluate on or list of multiple data arrays.
+                Array shape should be 'N x *' where 'N' is number of examples and '*' indicates
+                any number of dimensions. Its type should be the same as desired tensor.
+            target (np.ndarray or list): Target to evaluate on or list of multiple target arrays.
+                Array shape should be 'N x *' where 'N' is number of examples and '*' indicates
+                any number of dimensions. Its type should be the same as desired tensor.
             batch_size (int): Single update data batch size. (Default: 64)
             verbose (int): Two levels of verbosity:
                 * 1 - show progress bar,
@@ -305,6 +306,9 @@ class TorchTrainer(object):
         results_avg = defaultdict(float)
         for iter_t, (data, target) in enumerate(
                 tqdm(data_loader, ascii=True, desc="Evaluate", disable=(not verbose))):
+            data = [d.to(self.device, non_blocking=True) for d in data]
+            target = [t.to(self.device, non_blocking=True) for t in target]
+
             results_tmp, _ = self._eval_metrics(data, target)
             self._average_metrics(results_avg, results_tmp, iter_t)
 
@@ -315,22 +319,32 @@ class TorchTrainer(object):
         """Fit PyTorch module to dataset.
 
         Args:
-            data (torch.Tensor or list): Data to train on or list of multiple data tensors.
-                Tensor shape should be 'N x *' where 'N' is number of examples and '*' indicates
-                any number of dimensions.
-            target (torch.Tensor or list): Target to train on or list of multiple target tensors.
-                Tensor shape should be 'N x *' where 'N' is number of examples and '*' indicates
-                any number of dimensions.
+            data (np.ndarray or list): Data to train on or list of multiple data arrays.
+                Array shape should be 'N x *' where 'N' is number of examples and '*' indicates
+                any number of dimensions. Its type should be the same as desired tensor.
+            target (np.ndarray or list): Target to train on or list of multiple target arrays.
+                Array shape should be 'N x *' where 'N' is number of examples and '*' indicates
+                any number of dimensions. Its type should be the same as desired tensor.
             batch_size (int): Single update data batch size. (Default: 64)
             epochs (int): How many times iterate over whole dataset. (Default: 1)
             verbose (int): Two levels of verbosity:
                 * 1 - show progress bar, (<- Default)
                 * 0 - show nothing.
             callbacks (list of Callback): Event train, epoch and batch events listeners.
-            validation_data (tuple): Tuple: (val_data, val_targets). Enables evaluation on val. data.
+            validation_split (float): How big fraction of data put away for validation evaluation.
+                The validation set is selected from the last samples in the data and target.
+                (Default: 0.0)
+            validation_data (tuple): Tuple: (val_data, val_targets). Overwrites `validation_split`.
+                (Default: None)
             shuffle (bool): If randomize data order in each epoch. (Default: True)
             initial_epoch (int): From which number start to count epochs. (Default: 0)
         """
+
+        # Validation split
+        if validation_data is None and validation_split > 0.0 and validation_split < 1.0:
+            data, data_val = self._val_split(data, validation_split)
+            target, target_val = self._val_split(target, validation_split)
+            validation_data = (data_val, target_val)
 
         # Create training data loader
         data_loader = torch.utils.data.DataLoader(
@@ -386,6 +400,8 @@ class TorchTrainer(object):
                           disable=(not verbose)) as pbar:
                     for iter_t, (data, target) in enumerate(pbar):
                         callbacks_list.on_batch_begin(iter_t)
+                        data = [d.to(self.device, non_blocking=True) for d in data]
+                        target = [t.to(self.device, non_blocking=True) for t in target]
 
                         self.optim.zero_grad()
 
@@ -498,6 +514,25 @@ class TorchTrainer(object):
 
         return merged_r
 
+    @staticmethod
+    def _val_split(data, split):
+        """Splits provided data into two sets.
+
+        Args:
+            data (np.ndarray or list): Data np.ndarray (or list of data np.ndarray-s) to split.
+            split (float): Value between 0.0 and 1.0. Fraction of examples split to second set.
+
+        Return:
+            np.ndarray or list: First dataset of size '(1 - split) * number of samples'.
+            np.ndarray or list: Second dataset of size 'split * number of samples'.
+        """
+
+        if isinstance(data, (list, tuple)):
+            return list(zip(*[TorchTrainer._val_split(d, split) for d in data]))
+        else:
+            split_point = int((1 - split) * len(data))
+            return data[:split_point], data[split_point:]
+
     def _prepare(self):
         """Prepares Trainer for training/evaluation."""
 
@@ -514,6 +549,7 @@ if __name__ == "__main__":
     from sklearn.datasets import load_digits
 
     NUM_CLASSES = 10
+    USE_CUDA = torch.cuda.is_available()
 
     # Load data and divide into datasets
     data, target = load_digits(n_class=NUM_CLASSES, return_X_y=True)
@@ -544,7 +580,7 @@ if __name__ == "__main__":
             return self.out(hidden)
 
     # Instantiate Torch Trainer!
-    net = TorchTrainer(Net(data.shape[1], NUM_CLASSES))
+    net = TorchTrainer(Net(data.shape[1], NUM_CLASSES), device_name='cuda' if USE_CUDA else 'cpu')
 
     # Create accuracy metric
     def acc(pred, target):

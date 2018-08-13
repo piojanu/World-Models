@@ -13,10 +13,11 @@
         "logs_dir"         : "./checkpoints_n_logs"
     },
     "rnn_training": {
-        "batch_size"       : 256,
-        "sequence_size"    : 500,
+        "batch_size"       : 16,
+        "sequence_len"     : 500,
         "hidden_units"     : 64,
         "n_gaussians"      : 4,
+        "temperature"      : 1.15,
         "epochs"           : 100,
         "learning_rate"    : 0.001,
         "patience"         : 5,
