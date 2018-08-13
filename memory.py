@@ -7,10 +7,49 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from third_party.humblerl import Callback
+from third_party.humblerl import Callback, Vision
 from third_party.torchtrainer import TorchTrainer
 from torch.distributions import Normal
 from torch.utils.data import Dataset
+
+
+class MDNVision(Vision, Callback):
+    def __init__(self, vae_model, mdn_model, latent_dim, state_processor_fn):
+        """Initialize vision processors.
+
+        Args:
+            vae_model (keras.Model): Keras VAE encoder.
+            mdn_model (torch.nn.Module): PyTorch MDN-RNN memory.
+            latent_dim (int): Latent space dimensionality.
+            state_processor_fn (function): Function for state processing. It should
+                take raw environment state as an input and return processed state.
+
+        Note:
+            In order to work, this Vision system must be also passed as callback to 'hrl.loop(...)'!
+        """
+
+        # It will call `Vision` initialization
+        super(MDNVision, self).__init__(self.process_state)
+
+        self.vae_model = vae_model
+        self.mdn_model = mdn_model
+        self.latent_dim = latent_dim
+        self.state_processor_fn = state_processor_fn
+
+    def process_state(self, state):
+        # NOTE: [0][0] <- it gets first in the batch latent space mean (mu)
+        latent = self.vae_model.predict(self.state_processor_fn(state)[np.newaxis, :])[0][0]
+        memory = self.mdn_model.hidden[0].detach().numpy()
+
+        return np.concatenate((latent, memory.flatten()))
+
+    def on_episode_start(self, train_mode):
+        self.mdn_model.init_hidden(1)
+
+    def on_step_taken(self, transition, info):
+        state = torch.from_numpy(transition.state[:self.latent_dim]).view(1, 1, -1)
+        action = torch.from_numpy(np.array([transition.action])).view(1, 1, -1)
+        self.mdn_model(state, action)
 
 
 class StoreTrajectories2npz(Callback):

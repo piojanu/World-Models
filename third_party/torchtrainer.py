@@ -45,10 +45,10 @@ class Callback(object):
     def on_epoch_end(self, epoch, metrics):
         pass
 
-    def on_batch_begin(self, batch):
+    def on_batch_begin(self, batch, batch_size):
         pass
 
-    def on_batch_end(self, batch, metrics):
+    def on_batch_end(self, batch, batch_size, metrics):
         pass
 
 
@@ -76,13 +76,13 @@ class CallbackList(Callback):
         for callback in self.callbacks:
             callback.on_epoch_end(epoch, metrics)
 
-    def on_batch_begin(self, batch):
+    def on_batch_begin(self, batch, batch_size):
         for callback in self.callbacks:
-            callback.on_batch_begin(batch)
+            callback.on_batch_begin(batch, batch_size)
 
-    def on_batch_end(self, batch, metrics):
+    def on_batch_end(self, batch, batch_size, metrics):
         for callback in self.callbacks:
-            callback.on_batch_end(batch, metrics)
+            callback.on_batch_end(batch, batch_size, metrics)
 
 
 class EarlyStopping(Callback):
@@ -141,8 +141,8 @@ class LambdaCallback(Callback):
         self.on_train_end = on_train_end if on_train_end is not None else lambda a: None
         self.on_epoch_begin = on_epoch_begin if on_epoch_begin is not None else lambda e: None
         self.on_epoch_end = on_epoch_end if on_epoch_end is not None else lambda e, m: None
-        self.on_batch_begin = on_batch_begin if on_batch_begin is not None else lambda b: None
-        self.on_batch_end = on_batch_end if on_batch_end is not None else lambda b, m: None
+        self.on_batch_begin = on_batch_begin if on_batch_begin is not None else lambda b, s: None
+        self.on_batch_end = on_batch_end if on_batch_end is not None else lambda b, s, m: None
 
 
 class ModelCheckpoint(Callback):
@@ -399,7 +399,7 @@ class TorchTrainer(object):
                 with tqdm(data_loader, ascii=True, desc="{:2d}/{}".format(epoch + 1, epochs),
                           disable=(not verbose)) as pbar:
                     for iter_t, (data, target) in enumerate(pbar):
-                        callbacks_list.on_batch_begin(iter_t)
+                        callbacks_list.on_batch_begin(iter_t, data[0].size(0))
                         data = [d.to(self.device, non_blocking=True) for d in data]
                         target = [t.to(self.device, non_blocking=True) for t in target]
 
@@ -411,7 +411,7 @@ class TorchTrainer(object):
                         loss.backward()
                         self.optim.step()
 
-                        callbacks_list.on_batch_end(iter_t, results_tmp)
+                        callbacks_list.on_batch_end(iter_t, data[0].size(0), results_tmp)
 
                         if (iter_t + 1) == len(data_loader) and validation_loader is not None:
                             results_val = self.evaluate_loader(validation_loader)

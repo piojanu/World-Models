@@ -8,7 +8,7 @@ import os
 import third_party.humblerl as hrl
 
 from functools import partial
-from memory import build_rnn_model, MDNDataset, StoreTrajectories2npz
+from memory import build_rnn_model, MDNVision, MDNDataset, StoreTrajectories2npz
 from third_party.humblerl.utils import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
 from utils import Config, HDF5DataGenerator, boxing_state_processor as state_processor
@@ -184,7 +184,7 @@ def record_mem(ctx, path, model_path, n_games):
         raise ValueError("VAE model weights from \"{}\" path doesn't exist!".format(model_path))
 
     # Resizes states to `state_shape` with cropping and encode to latent space
-    vision = VAEVision(encoder, config.general['state_shape'], state_processor_fn=partial(
+    vision = VAEVision(encoder, state_processor_fn=partial(
         state_processor, state_shape=config.general['state_shape']))
 
     # Play `N` random games and gather data as it goes
@@ -221,9 +221,9 @@ def train_mem(ctx, path):
 
     # Initialize callbacks
     callbacks = [
-        # EarlyStopping(patience=config.rnn['patience']),
-        LambdaCallback(on_batch_begin=lambda b: rnn.model.init_hidden(config.rnn['batch_size'])),
-        ModelCheckpoint(config.rnn['ckpt_path'])
+        EarlyStopping(metric='loss', patience=config.rnn['patience'], verbose=1),
+        LambdaCallback(on_batch_begin=lambda _, batch_size: rnn.model.init_hidden(batch_size)),
+        ModelCheckpoint(config.rnn['ckpt_path'], metric='loss', save_best=True)
     ]
 
     # Load checkpoint if available

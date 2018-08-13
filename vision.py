@@ -10,23 +10,19 @@ from keras.optimizers import Adam
 
 
 class VAEVision(Vision):
-    def __init__(self, model, input_shape, state_processor_fn=None):
+    def __init__(self, model, state_processor_fn):
         """Initialize vision processors.
 
         Args:
             model (keras.Model): Keras VAE encoder.
-            input_shape (tuple): Input to model shape (state shape).
             state_processor_fn (function): Function for state processing. It should
                 take raw environment state as an input and return processed state.
-                (Default: None which will result in passing raw state)
         """
 
         # NOTE: [0:2] <- it gets latent space mean (mu) and logvar, then concatenate batch dimension
         #       (batch size is one, after concatenate we get array '2 x latent space dim').
-        self._process_state = \
-            lambda state: np.concatenate(
-                model.predict(state_processor_fn(state).reshape(-1, *input_shape))[0:2])
-        self._process_reward = lambda x: x
+        super(VAEVision, self).__init__(lambda state: np.concatenate(
+            model.predict(state_processor_fn(state)[np.newaxis, :])[0:2]))
 
 
 def build_vae_model(vae_params, input_shape):
