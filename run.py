@@ -239,5 +239,54 @@ def train_mem(ctx, path):
     )
 
 
+@cli.command()
+@click.pass_context
+@click.option('-v', '--vae_path', default=None,
+              help='Path to VAE ckpt. Taken from .json config if `None` (Default: None)')
+@click.option('-m', '--mdn_path', default=None,
+              help='Path to MDN-RNN ckpt. Taken from .json config if `None` (Default: None)')
+@click.option('-n', '--n_games', default=10000, help='Number of games to play (Default: 10000)')
+def train_ctrl(ctx, vae_path, mdn_path, n_games):
+    """Plays chosen game and trains Controller on preprocessed states with VAE and MDN-RNN
+    (loaded from `--vae_path` or `--mdn_path`)."""
+
+    config = ctx.obj
+
+    # Create Gym environment, random agent and store to hdf5 callback
+    env = hrl.create_gym(config.general['game_name'])
+    mind = RandomAgent(env.valid_actions)
+
+    # Build VAE model and load checkpoint
+    vae, encoder, _ = build_vae_model(config.vae, config.general['state_shape'])
+
+    if vae_path is None:
+        vae_path = config.vae['ckpt_path']
+
+    if os.path.exists(vae_path):
+        vae.load_weights(vae_path)
+        log.info("Loaded VAE model weights from: %s", vae_path)
+    else:
+        raise ValueError("VAE model weights from \"{}\" path doesn't exist!".format(vae_path))
+
+    # Build MDN-RNN model and load checkpoint
+    rnn = build_rnn_model(config.rnn, config.vae['latent_space_dim'], np.max(env.valid_actions) + 1)
+
+    if mdn_path is None:
+        mdn_path = config.rnn['ckpt_path']
+
+    if os.path.exists(mdn_path):
+        rnn.load_ckpt(mdn_path)
+        log.info("Loaded MDN-RNN model weights from: %s", mdn_path)
+    else:
+        raise ValueError("MDN-RNN model weights from \"{}\" path doesn't exist!".format(mdn_path))
+
+    # Resizes states to `state_shape` with cropping and encode to latent space
+    vision = MDNVision(encoder, rnn.model, config.vae['latent_space_dim'], state_processor_fn=partial(
+        state_processor, state_shape=config.general['state_shape']))
+
+    # Play `N` random games and gather data as it goes
+    hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[vision])
+
+
 if __name__ == '__main__':
     cli()
