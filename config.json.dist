@@ -15,7 +15,7 @@
     "rnn_training": {
         "batch_size"       : 16,
         "sequence_len"     : 500,
-        "hidden_units"     : 64,
+        "hidden_units"     : 128,
         "n_gaussians"      : 4,
         "temperature"      : 1.15,
         "epochs"           : 100,

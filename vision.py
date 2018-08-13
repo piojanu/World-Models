@@ -1,6 +1,7 @@
 import logging as log
 
 import keras.backend as K
+import numpy as np
 
 from third_party.humblerl import Vision
 from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda, Reshape
@@ -20,9 +21,11 @@ class VAEVision(Vision):
                 (Default: None which will result in passing raw state)
         """
 
-        # NOTE: [0][0] <- it gets latent space mean (mu), first from batch
+        # NOTE: [0:2] <- it gets latent space mean (mu) and logvar, then concatenate batch dimension
+        #       (batch size is one, after concatenate we get array '2 x latent space dim').
         self._process_state = \
-            lambda state: model.predict(state_processor_fn(state).reshape(-1, *input_shape))[0][0]
+            lambda state: np.concatenate(
+                model.predict(state_processor_fn(state).reshape(-1, *input_shape))[0:2])
         self._process_reward = lambda x: x
 
 
@@ -67,7 +70,7 @@ def build_vae_model(vae_params, input_shape):
 
     z = Lambda(sample, output_shape=(vae_params['latent_space_dim'],))([mu, logvar])
 
-    encoder = Model(encoder_input, [mu, z], name='Encoder')
+    encoder = Model(encoder_input, [mu, logvar, z], name='Encoder')
     encoder.summary(print_fn=lambda x: log.debug('%s', x))
 
     ### Decoder z -> img ###
@@ -114,7 +117,7 @@ def build_vae_model(vae_params, input_shape):
 
     ### Build and compile VAE model ###
 
-    decoder_output = decoder(encoder(encoder_input)[1])
+    decoder_output = decoder(encoder(encoder_input)[2])
     vae = Model(encoder_input, decoder_output, name='VAE')
     vae.compile(optimizer=Adam(lr=vae_params['learning_rate']), loss=elbo_loss)
     vae.summary(print_fn=lambda x: log.debug('%s', x))

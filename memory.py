@@ -47,7 +47,7 @@ class StoreTrajectories2npz(Callback):
         longest_episode = max(self._episod_lengths)
         num_episodes = len(self._episod_lengths)
 
-        states = np.zeros((num_episodes, longest_episode, len(self._states[0][0])))
+        states = np.zeros((num_episodes, longest_episode, *self._states[0][0].shape))
         actions = np.zeros((num_episodes, longest_episode, 1))
         lengths = np.zeros((num_episodes, 1))
 
@@ -81,28 +81,36 @@ class MDNDataset(Dataset):
             same as desired Tensor type.
         """
 
-        self.states = states
-        self.actions = actions
-        self.lengths = lengths
+        self.states = torch.from_numpy(states)
+        self.actions = torch.from_numpy(actions)
+        self.lengths = torch.from_numpy(lengths)
         self.sequence_len = sequence_len
 
     def __getitem__(self, idx):
         """Get sequence at random starting position of given sequence length from episode `idx`."""
         offset = 1
 
-        states = np.zeros((self.sequence_len, self.states.shape[2]), dtype=self.states.dtype)
-        next_states = np.zeros((self.sequence_len, self.states.shape[2]), dtype=self.states.dtype)
-        actions = np.zeros((self.sequence_len, 1), dtype=self.actions.dtype)
+        states = torch.zeros(self.sequence_len, self.states.shape[3], dtype=self.states.dtype)
+        next_states = torch.zeros(self.sequence_len, self.states.shape[3], dtype=self.states.dtype)
+        actions = torch.zeros(self.sequence_len, 1, dtype=self.actions.dtype)
 
         length = self.lengths[idx]
-        # '- offset' because next_states is offset by 'offset'
+        # Sample where to start sequence of length `self.sequence_len` in episode `idx`
+        # '- offset' because "next states" are offset by 'offset'
         start = np.random.randint(length - self.sequence_len - offset)
 
-        states = self.states[idx, start:start + self.sequence_len]
-        next_states = self.states[idx, start + offset:start + self.sequence_len + offset]
+        # Sample latent states (this is done to prevent overfitting MDN-RNN to a specific 'z'.)
+        latent = Normal(
+            loc=self.states[idx, start:start + self.sequence_len + offset, 0],
+            scale=self.states[idx, start:start + self.sequence_len + offset, 1]
+        )
+        z_samples = latent.sample()
+
+        states = z_samples[:-offset]
+        next_states = z_samples[offset:]
         actions = self.actions[idx, start:start + self.sequence_len]
 
-        return [torch.from_numpy(states), torch.from_numpy(actions)], [torch.from_numpy(next_states)]
+        return [states, actions], [next_states]
 
     def __len__(self):
         return self.states.shape[0]

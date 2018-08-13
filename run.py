@@ -217,13 +217,13 @@ def train_mem(ctx, path):
     )
 
     # Build model
-    rnn = build_rnn_model(config.rnn, states.shape[2], np.max(actions) + 1)
+    rnn = build_rnn_model(config.rnn, states.shape[3], np.max(actions) + 1)
 
     # Initialize callbacks
     callbacks = [
         # EarlyStopping(patience=config.rnn['patience']),
         LambdaCallback(on_batch_begin=lambda b: rnn.model.init_hidden(config.rnn['batch_size'])),
-        ModelCheckpoint(config.rnn['ckpt_path'], save_best=False, verbose=1)
+        ModelCheckpoint(config.rnn['ckpt_path'])
     ]
 
     # Load checkpoint if available
