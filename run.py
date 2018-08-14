@@ -179,7 +179,9 @@ def record_mem(ctx, path, model_path, n_games):
 @cli.command()
 @click.pass_context
 @click.argument('path', type=click.Path(exists=True), required=True)
-def train_mem(ctx, path):
+@click.option('-v', '--vae_path', default='DEFAULT',
+              help='Path to VAE ckpt. Needed for visualization only when render is enabled.')
+def train_mem(ctx, path, vae_path):
     """Train MDN-RNN model as specified in .json config with data at `PATH`."""
 
     from third_party.torchtrainer import EarlyStopping, LambdaCallback, ModelCheckpoint
@@ -204,10 +206,84 @@ def train_mem(ctx, path):
     # Build model
     rnn = build_rnn_model(config.rnn, states.shape[3], np.max(actions) + 1)
 
+    # If render features enabled...
+    if config.allow_render:
+        if vae_path == 'DEFAULT':
+            raise ValueError("To render provide valid path to VAE checkpoint!")
+
+        # ...plot first eight training examples with VAE reconstructions
+        # at the beginning of every epoch
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.gridspec as gridspec
+        import matplotlib.pyplot as plt
+        import torch
+
+        # Check if destination dir exists
+        plots_dir = os.path.join(config.vae['logs_dir'], "plots_mdn")
+        if not os.path.exists(plots_dir):
+            os.makedirs(plots_dir)
+
+        # Build VAE model and load checkpoint
+        _, _, decoder = build_vae_model(config.vae,
+                                        config.general['state_shape'],
+                                        vae_path)
+        # Prepare data
+        S_eval = states[0, :400, 0]
+        S_next = states[0, 1:401, 0]
+        A_eval = actions[0, :400]
+
+        # Evaluate VAE at the end of epoch
+        def plot_samples(epoch):
+            rnn.model.init_hidden(1)
+            mu, _, pi = rnn.model(torch.from_numpy(S_eval).view(1, 400, -1),
+                                  torch.from_numpy(A_eval).view(1, 400, -1))
+
+            orig_mu = S_eval[::100]
+            mean_mu = torch.sum(
+                mu * pi, dim=2).detach().numpy().reshape(400, -1)[::100]
+            max_mu = torch.gather(mu, dim=2, index=torch.argmax(
+                pi, dim=2, keepdim=True)).detach().numpy().reshape(400, -1)[::100]
+            next_mu = S_next[::100]
+
+            orig_img = decoder.predict(orig_mu)
+            mean_img = decoder.predict(mean_mu)
+            max_img = decoder.predict(max_mu)
+            next_img = decoder.predict(next_mu)
+
+            samples = np.empty_like(np.concatenate((orig_img, mean_img, max_img, next_img)))
+            samples[0::4] = orig_img
+            samples[1::4] = mean_img
+            samples[2::4] = max_img
+            samples[3::4] = next_img
+
+            _ = plt.figure(figsize=(4, 4))
+            gs = gridspec.GridSpec(4, 4)
+            gs.update(wspace=0.05, hspace=0.05)
+
+            for i, sample in enumerate(samples):
+                ax = plt.subplot(gs[i])
+                plt.axis('off')
+                ax.set_xticklabels([])
+                ax.set_yticklabels([])
+                ax.set_aspect('equal')
+                plt.imshow(sample.reshape(*config.general['state_shape']))
+
+            # Save figure to logs dir
+            plt.savefig(os.path.join(
+                plots_dir,
+                "memory_sample_{}".format(dt.datetime.now().strftime("%d-%mT%H:%M"))
+            ))
+            plt.close()
+    else:
+        def plot_samples(epoch):
+            pass
+
     # Initialize callbacks
     callbacks = [
         EarlyStopping(metric='loss', patience=config.rnn['patience'], verbose=1),
-        LambdaCallback(on_batch_begin=lambda _, batch_size: rnn.model.init_hidden(batch_size)),
+        LambdaCallback(on_batch_begin=lambda _, batch_size: rnn.model.init_hidden(batch_size),
+                       on_epoch_begin=plot_samples),
         ModelCheckpoint(config.rnn['ckpt_path'], metric='loss', save_best=True)
     ]
 
