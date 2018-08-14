@@ -2,6 +2,7 @@ import logging as log
 
 import keras.backend as K
 import numpy as np
+import os.path
 
 from third_party.humblerl import Vision
 from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda, Reshape
@@ -25,12 +26,13 @@ class VAEVision(Vision):
             model.predict(state_processor_fn(state)[np.newaxis, :])[0:2]))
 
 
-def build_vae_model(vae_params, input_shape):
+def build_vae_model(vae_params, input_shape, model_path=None):
     """Builds VAE encoder, decoder using Keras Model and VAE loss.
 
     Args:
         vae_params (dict): VAE parameters from .json config.
         input_shape (tuple): Input to encoder shape (state shape).
+        model_path (str): Path to VAE ckpt. Taken from .json config if `None` (Default: None)
 
     Returns:
         keras.models.Model: Compiled VAE, ready for training.
@@ -117,5 +119,18 @@ def build_vae_model(vae_params, input_shape):
     vae = Model(encoder_input, decoder_output, name='VAE')
     vae.compile(optimizer=Adam(lr=vae_params['learning_rate']), loss=elbo_loss)
     vae.summary(print_fn=lambda x: log.debug('%s', x))
+
+    # Load checkpoint if available
+    if model_path is None:
+        if os.path.exists(vae_params['ckpt_path']):
+            model_path = vae_params['ckpt_path']
+        else:
+            log.info("VAE weights in \"{}\" doesn't exist! Starting tabula rasa.".format(model_path))
+    elif not os.path.exists(model_path):
+        raise ValueError("VAE weights in \"{}\" path doesn't exist!".format(model_path))
+
+    if model_path is not None:
+        vae.load_weights(model_path)
+        log.info("Loaded VAE model weights from: %s", model_path)
 
     return vae, encoder, decoder

@@ -88,7 +88,7 @@ def train_vae(ctx, path):
         import matplotlib.pyplot as plt
 
         # Check if destination dir exists
-        plots_dir = os.path.join(config.vae['logs_dir'], "plots")
+        plots_dir = os.path.join(config.vae['logs_dir'], "plots_vae")
         if not os.path.exists(plots_dir):
             os.makedirs(plots_dir)
 
@@ -130,11 +130,6 @@ def train_vae(ctx, path):
                         save_best_only=True, save_weights_only=True)
     ]
 
-    # Load checkpoint if available
-    if os.path.exists(config.vae['ckpt_path']):
-        vae.load_weights(config.vae['ckpt_path'])
-        log.info("Loaded VAE model weights from: %s", config.vae['ckpt_path'])
-
     # Fit VAE model!
     vae.fit_generator(
         generator=train_gen,
@@ -171,17 +166,7 @@ def record_mem(ctx, path, model_path, n_games):
     store_callback = StoreTrajectories2npz(path)
 
     # Build VAE model
-    vae, encoder, _ = build_vae_model(config.vae, config.general['state_shape'])
-
-    # Load checkpoint
-    if model_path is None:
-        model_path = config.vae['ckpt_path']
-
-    if os.path.exists(model_path):
-        vae.load_weights(model_path)
-        log.info("Loaded VAE model weights from: %s", model_path)
-    else:
-        raise ValueError("VAE model weights from \"{}\" path doesn't exist!".format(model_path))
+    vae, encoder, _ = build_vae_model(config.vae, config.general['state_shape'], model_path)
 
     # Resizes states to `state_shape` with cropping and encode to latent space
     vision = VAEVision(encoder, state_processor_fn=partial(
@@ -226,11 +211,6 @@ def train_mem(ctx, path):
         ModelCheckpoint(config.rnn['ckpt_path'], metric='loss', save_best=True)
     ]
 
-    # Load checkpoint if available
-    if os.path.exists(config.rnn['ckpt_path']):
-        rnn.load_ckpt(config.rnn['ckpt_path'])
-        log.info("Loaded MDN-RNN model weights from: %s", config.rnn['ckpt_path'])
-
     # Fit MDN-RNN model!
     rnn.fit_loader(
         data_loader,
@@ -257,28 +237,15 @@ def train_ctrl(ctx, vae_path, mdn_path, n_games):
     mind = RandomAgent(env.valid_actions)
 
     # Build VAE model and load checkpoint
-    vae, encoder, _ = build_vae_model(config.vae, config.general['state_shape'])
-
-    if vae_path is None:
-        vae_path = config.vae['ckpt_path']
-
-    if os.path.exists(vae_path):
-        vae.load_weights(vae_path)
-        log.info("Loaded VAE model weights from: %s", vae_path)
-    else:
-        raise ValueError("VAE model weights from \"{}\" path doesn't exist!".format(vae_path))
+    vae, encoder, _ = build_vae_model(config.vae,
+                                      config.general['state_shape'],
+                                      vae_path)
 
     # Build MDN-RNN model and load checkpoint
-    rnn = build_rnn_model(config.rnn, config.vae['latent_space_dim'], np.max(env.valid_actions) + 1)
-
-    if mdn_path is None:
-        mdn_path = config.rnn['ckpt_path']
-
-    if os.path.exists(mdn_path):
-        rnn.load_ckpt(mdn_path)
-        log.info("Loaded MDN-RNN model weights from: %s", mdn_path)
-    else:
-        raise ValueError("MDN-RNN model weights from \"{}\" path doesn't exist!".format(mdn_path))
+    rnn = build_rnn_model(config.rnn,
+                          config.vae['latent_space_dim'],
+                          np.max(env.valid_actions) + 1,
+                          mdn_path)
 
     # Resizes states to `state_shape` with cropping and encode to latent space
     vision = MDNVision(encoder, rnn.model, config.vae['latent_space_dim'], state_processor_fn=partial(

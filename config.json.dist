@@ -6,7 +6,7 @@
     "vae_training": {
         "batch_size"       : 256,
         "latent_space_dim" : 16,
-        "epochs"           : 100,
+        "epochs"           : 300,
         "learning_rate"    : 0.001,
         "patience"         : 5,
         "ckpt_path"        : "./checkpoints_n_logs/best_vision.ckpt",
@@ -15,12 +15,12 @@
     "rnn_training": {
         "batch_size"       : 16,
         "sequence_len"     : 500,
-        "hidden_units"     : 128,
-        "n_gaussians"      : 4,
+        "hidden_units"     : 256,
+        "n_gaussians"      : 5,
         "temperature"      : 1.15,
-        "epochs"           : 100,
-        "learning_rate"    : 0.001,
-        "patience"         : 5,
+        "epochs"           : 300,
+        "learning_rate"    : 0.01,
+        "patience"         : 25,
         "ckpt_path"        : "./checkpoints_n_logs/best_memory.ckpt",
         "logs_dir"         : "./checkpoints_n_logs"
     }

@@ -201,13 +201,14 @@ class MDN(nn.Module):
         )
 
 
-def build_rnn_model(rnn_params, latent_dim, action_size):
+def build_rnn_model(rnn_params, latent_dim, action_size, model_path=None):
     """Builds MDN-RNN memory module, which model time dependencies.
 
     Args:
         rnn_params (dict): MDN-RNN parameters from .json config.
         latent_dim (int): Latent space dimensionality.
         action_size (int): Size of action shape.
+        model_path (str): Path to VAE ckpt. Taken from .json config if `None` (Default: None)
 
     Returns:
         TorchTrainer: Compiled MDN-RNN model wrapped in TorchTrainer, ready for training.
@@ -238,5 +239,18 @@ def build_rnn_model(rnn_params, latent_dim, action_size):
 
     mdn.compile(optimizer=optim.Adam(mdn.model.parameters(), lr=rnn_params['learning_rate']),
                 loss=mdn_loss_function)
+
+    # Load checkpoint if available
+    if model_path is None:
+        if os.path.exists(rnn_params['ckpt_path']):
+            model_path = rnn_params['ckpt_path']
+        else:
+            log.info("MDN-RNN weights in \"{}\" doesn't exist! Starting tabula rasa.".format(model_path))
+    elif not os.path.exists(model_path):
+        raise ValueError("MDN-RNN weights in \"{}\" doesn't exist!".format(model_path))
+
+    if model_path is not None:
+        mdn.load_ckpt(model_path)
+        log.info("Loaded MDN-RNN model weights from: %s", model_path)
 
     return mdn
