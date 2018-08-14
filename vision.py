@@ -23,7 +23,7 @@ class VAEVision(Vision):
         # NOTE: [0:2] <- it gets latent space mean (mu) and logvar, then concatenate batch dimension
         #       (batch size is one, after concatenate we get array '2 x latent space dim').
         super(VAEVision, self).__init__(lambda state: np.concatenate(
-            model.predict(state_processor_fn(state)[np.newaxis, :])[0:2]))
+            model.predict(state_processor_fn(state)[np.newaxis, :]/255.)[0:2]))
 
 
 def build_vae_model(vae_params, input_shape, model_path=None):
