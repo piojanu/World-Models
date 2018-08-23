@@ -24,9 +24,12 @@ class Config(object):
             custom_config = json.loads(f.read())
 
         # Merging default and custom configs, for repeating keys second dict overwrites values
-        self.general = {**default_config["general"], **custom_config.get("general", {})}
-        self.rnn = {**default_config["rnn_training"], **custom_config.get("rnn_training", {})}
-        self.vae = {**default_config["vae_training"], **custom_config.get("vae_training", {})}
+        self.general = {**default_config["general"],
+                        **custom_config.get("general", {})}
+        self.rnn = {**default_config["rnn_training"],
+                    **custom_config.get("rnn_training", {})}
+        self.vae = {**default_config["vae_training"],
+                    **custom_config.get("vae_training", {})}
         self.is_debug = is_debug
         self.allow_render = allow_render
 
@@ -100,37 +103,20 @@ class HDF5DataGenerator(Sequence):
         return X, y
 
 
-def pong_state_processor(img, state_shape):
-    """Resize states to 64x64 with cropping suited for Pong.
+def state_processor(img, state_shape, crop_range):
+    """Resize states to `state_shape` with cropping of `crop_range`.
 
     Args:
         img (np.ndarray): Image to crop and resize.
         state_shape (tuple): Output shape.
+        state_shape (tuple): Range to crop.
 
     Return:
         np.ndarray: Cropped and reshaped to `state_shape` image.
     """
 
     # Crop image to 160x160x3, removes e.g. score bar
-    img = img[35:195, :, :]
+    img = eval("img"+crop_range)
 
     # Resize to 64x64 and cast to 0..255 values if requested
-    return resize(img, state_shape) * 255
-
-
-def boxing_state_processor(img, state_shape):
-    """Resize states to 64x64 with cropping suited for Boxing.
-
-    Args:
-        img (np.ndarray): Image to crop and resize.
-        state_shape (tuple): Output shape.
-
-    Return:
-        np.ndarray: Cropped and reshaped to `state_shape` image.
-    """
-
-    # Crop image to 153x103x3, removes e.g. score bar
-    img = img[30:183, 28:131, :]
-
-    # Resize to 64x64 and cast to 0..255 values
     return resize(img, state_shape) * 255
