@@ -108,15 +108,15 @@ def state_processor(img, state_shape, crop_range):
 
     Args:
         img (np.ndarray): Image to crop and resize.
-        state_shape (tuple): Output shape.
-        state_shape (tuple): Range to crop.
+        state_shape (tuple): Output shape. Default: [64, 64, 3]
+        crop_range (string): Range to crop as indices of array. Default: "[30:183, 28:131, :]"
 
     Return:
         np.ndarray: Cropped and reshaped to `state_shape` image.
     """
 
-    # Crop image to 160x160x3, removes e.g. score bar
-    img = eval("img"+crop_range)
+    # Crop image to `crop_range`, removes e.g. score bar
+    img = eval("img" + crop_range)
 
     # Resize to 64x64 and cast to 0..255 values if requested
     return resize(img, state_shape) * 255
