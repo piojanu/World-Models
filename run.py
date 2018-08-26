@@ -327,7 +327,7 @@ def train_ctrl(ctx, vae_path, mdn_path, n_games):
     vision = MDNVision(encoder, rnn.model, config.vae['latent_space_dim'], state_processor_fn=partial(
         state_processor, state_shape=config.general['state_shape']))
 
-    # Play `N` random games and gather data as it goes
+    # Play `N` random games and train Controller in the go
     hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[vision])
 
 

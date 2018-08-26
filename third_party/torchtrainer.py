@@ -545,7 +545,7 @@ if __name__ == "__main__":
     import numpy as np
     import torch.optim as optim
 
-    from sklearn.cross_validation import train_test_split
+    from sklearn.model_selection import train_test_split
     from sklearn.datasets import load_digits
 
     NUM_CLASSES = 10
