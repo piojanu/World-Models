@@ -24,12 +24,9 @@ class Config(object):
             custom_config = json.loads(f.read())
 
         # Merging default and custom configs, for repeating keys second dict overwrites values
-        self.general = {**default_config["general"],
-                        **custom_config.get("general", {})}
-        self.rnn = {**default_config["rnn_training"],
-                    **custom_config.get("rnn_training", {})}
-        self.vae = {**default_config["vae_training"],
-                    **custom_config.get("vae_training", {})}
+        self.general = {**default_config["general"], **custom_config.get("general", {})}
+        self.rnn = {**default_config["rnn_training"], **custom_config.get("rnn_training", {})}
+        self.vae = {**default_config["vae_training"], **custom_config.get("vae_training", {})}
         self.is_debug = is_debug
         self.allow_render = allow_render
 
