@@ -23,8 +23,7 @@ from vision import build_vae_model, VAEVision
 @click.option('--render/--no-render', default=False, help="Allow to render/plot (Default: False)")
 def cli(ctx, config_path, debug, render):
     # Get and set up logger level and formatter
-    log.basicConfig(level=log.DEBUG if debug else log.INFO,
-                    format="[%(levelname)s]: %(message)s")
+    log.basicConfig(level=log.DEBUG if debug else log.INFO, format="[%(levelname)s]: %(message)s")
 
     # Load configuration from .json file into ctx object
     ctx.obj = Config(config_path, debug, render)
@@ -48,12 +47,10 @@ def record_vae(ctx, path, n_games, chunk_size, state_dtype):
         env.valid_actions, config.general['state_shape'], path, chunk_size=chunk_size, dtype=state_dtype)
 
     # Resizes states to `state_shape` with cropping
-    vision = hrl.Vision(partial(state_processor, state_shape=config.general['state_shape'],
-                                crop_range=config.general['crop_range']))
+    vision = hrl.Vision(partial(state_processor, state_shape=config.general['state_shape']))
 
     # Play `N` random games and gather data as it goes
-    hrl.loop(env, mind, vision, n_episodes=n_games,
-             verbose=1, callbacks=[store_callback])
+    hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])
 
 
 @cli.command()
@@ -118,8 +115,7 @@ def train_vae(ctx, path):
             # Save figure to logs dir
             plt.savefig(os.path.join(
                 plots_dir,
-                "vision_sample_{}".format(
-                    dt.datetime.now().strftime("%d-%mT%H:%M"))
+                "vision_sample_{}".format(dt.datetime.now().strftime("%d-%mT%H:%M"))
             ))
             plt.close()
     else:
@@ -170,16 +166,14 @@ def record_mem(ctx, path, model_path, n_games):
     store_callback = StoreTrajectories2npz(path)
 
     # Build VAE model
-    vae, encoder, _ = build_vae_model(
-        config.vae, config.general['state_shape'], model_path)
+    vae, encoder, _ = build_vae_model(config.vae, config.general['state_shape'], model_path)
 
     # Resizes states to `state_shape` with cropping and encode to latent space
     vision = VAEVision(encoder, state_processor_fn=partial(
         state_processor, state_shape=config.general['state_shape']))
 
     # Play `N` random games and gather data as it goes
-    hrl.loop(env, mind, vision, n_episodes=n_games,
-             verbose=1, callbacks=[store_callback])
+    hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])
 
 
 @cli.command()
@@ -257,8 +251,7 @@ def train_mem(ctx, path, vae_path):
             max_img = decoder.predict(max_mu)
             next_img = decoder.predict(next_mu)
 
-            samples = np.empty_like(np.concatenate(
-                (orig_img, mean_img, max_img, next_img)))
+            samples = np.empty_like(np.concatenate((orig_img, mean_img, max_img, next_img)))
             samples[0::4] = orig_img
             samples[1::4] = mean_img
             samples[2::4] = max_img
@@ -279,8 +272,7 @@ def train_mem(ctx, path, vae_path):
             # Save figure to logs dir
             plt.savefig(os.path.join(
                 plots_dir,
-                "memory_sample_{}".format(
-                    dt.datetime.now().strftime("%d-%mT%H:%M"))
+                "memory_sample_{}".format(dt.datetime.now().strftime("%d-%mT%H:%M"))
             ))
             plt.close()
     else:
@@ -289,8 +281,7 @@ def train_mem(ctx, path, vae_path):
 
     # Initialize callbacks
     callbacks = [
-        EarlyStopping(
-            metric='loss', patience=config.rnn['patience'], verbose=1),
+        EarlyStopping(metric='loss', patience=config.rnn['patience'], verbose=1),
         LambdaCallback(on_batch_begin=lambda _, batch_size: rnn.model.init_hidden(batch_size),
                        on_epoch_begin=plot_samples),
         ModelCheckpoint(config.rnn['ckpt_path'], metric='loss', save_best=True)
@@ -337,8 +328,7 @@ def train_ctrl(ctx, vae_path, mdn_path, n_games):
         state_processor, state_shape=config.general['state_shape']))
 
     # Play `N` random games and gather data as it goes
-    hrl.loop(env, mind, vision, n_episodes=n_games,
-             verbose=1, callbacks=[vision])
+    hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[vision])
 
 
 if __name__ == '__main__':
