@@ -43,10 +43,10 @@ class MDNVision(Vision, Callback):
 
         return np.concatenate((latent, memory.flatten()))
 
-    def on_episode_start(self, train_mode):
+    def on_episode_start(self, episode, train_mode):
         self.mdn_model.init_hidden(1)
 
-    def on_step_taken(self, transition, info):
+    def on_step_taken(self, step, transition, info):
         state = torch.from_numpy(transition.state[:self.latent_dim]).view(1, 1, -1)
         action = torch.from_numpy(np.array([transition.action])).view(1, 1, -1)
         self.mdn_model(state, action)
@@ -72,17 +72,17 @@ class StoreTrajectories2npz(Callback):
         self._actions = []
         self._episod_lengths = []
 
-    def on_episode_start(self, train_mode):
+    def on_episode_start(self, episode, train_mode):
         self._states.append([])
         self._actions.append([])
         self._episod_lengths.append(0)
 
-    def on_step_taken(self, transition, info):
+    def on_step_taken(self, step, transition, info):
         self._states[-1].append(transition.state)
         self._actions[-1].append(transition.action)
         self._episod_lengths[-1] += 1
 
-    def on_loop_finish(self, is_aborted):
+    def on_loop_end(self, is_aborted):
         longest_episode = max(self._episod_lengths)
         num_episodes = len(self._episod_lengths)
 
