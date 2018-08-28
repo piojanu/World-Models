@@ -100,37 +100,20 @@ class HDF5DataGenerator(Sequence):
         return X, y
 
 
-def pong_state_processor(img, state_shape):
-    """Resize states to 64x64 with cropping suited for Pong.
+def state_processor(img, state_shape, crop_range):
+    """Resize states to `state_shape` with cropping of `crop_range`.
 
     Args:
         img (np.ndarray): Image to crop and resize.
-        state_shape (tuple): Output shape.
+        state_shape (tuple): Output shape. Default: [64, 64, 3]
+        crop_range (string): Range to crop as indices of array. Default: "[30:183, 28:131, :]"
 
     Return:
         np.ndarray: Cropped and reshaped to `state_shape` image.
     """
 
-    # Crop image to 160x160x3, removes e.g. score bar
-    img = img[35:195, :, :]
+    # Crop image to `crop_range`, removes e.g. score bar
+    img = eval("img" + crop_range)
 
     # Resize to 64x64 and cast to 0..255 values if requested
-    return resize(img, state_shape) * 255
-
-
-def boxing_state_processor(img, state_shape):
-    """Resize states to 64x64 with cropping suited for Boxing.
-
-    Args:
-        img (np.ndarray): Image to crop and resize.
-        state_shape (tuple): Output shape.
-
-    Return:
-        np.ndarray: Cropped and reshaped to `state_shape` image.
-    """
-
-    # Crop image to 153x103x3, removes e.g. score bar
-    img = img[30:183, 28:131, :]
-
-    # Resize to 64x64 and cast to 0..255 values
     return resize(img, state_shape) * 255

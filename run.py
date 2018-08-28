@@ -11,7 +11,7 @@ from functools import partial
 from memory import build_rnn_model, MDNVision, MDNDataset, StoreTrajectories2npz
 from third_party.humblerl.utils import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
-from utils import Config, HDF5DataGenerator, boxing_state_processor as state_processor
+from utils import Config, HDF5DataGenerator, state_processor
 from vision import build_vae_model, VAEVision
 
 
