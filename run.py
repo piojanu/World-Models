@@ -11,8 +11,8 @@ from functools import partial
 from third_party.humblerl.agents import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
 from tqdm import tqdm
-from controller import build_es_model, Evaluator
-from memory import build_rnn_model, MDNDataset, StoreTrajectories2npz
+from controller import build_es_model, Evaluator, ReturnTracker
+from memory import build_rnn_model, MDNDataset, MDNVision, StoreTrajectories2npz
 from utils import Config, HDF5DataGenerator, TqdmStream, state_processor
 from vision import build_vae_model, VAEVision
 
@@ -369,6 +369,57 @@ def train_ctrl(ctx, vae_path, mdn_path):
             solver.save_ckpt(config.es['ckpt_path'])
             log.debug("Saved checkpoint in path: %s", config.es['ckpt_path'])
 
+
+@cli.command()
+@click.pass_context
+@click.option('-v', '--vae_path', default=None,
+              help='Path to VAE ckpt. Taken from .json config if `None` (Default: None)')
+@click.option('-m', '--mdn_path', default=None,
+              help='Path to MDN-RNN ckpt. Taken from .json config if `None` (Default: None)')
+@click.option('-c', '--cma_path', default=None,
+              help='Path to CMA-ES ckpt. Taken from .json config if `None` (Default: None)')
+@click.option('-n', '--n_games', default=3, help='Number of games to play (Default: 3)')
+def eval(ctx, vae_path, mdn_path, cma_path, n_games):
+    """Plays chosen game testing whole pipeline: VAE -> MDN-RNN -> CMA-ES
+    (loaded from `vae_path`, `mdn_path` and `cma-path`)."""
+
+    config = ctx.obj
+
+    # Gen number of workers to run
+    processes = config.es['processes']
+    processes = processes if processes > 0 else None
+
+    # Get action space size
+    env = hrl.create_gym(config.general['game_name'])
+    action_size = len(env.valid_actions)
+
+    # Create VAE + MDN-RNN vision
+    _, encoder, _ = build_vae_model(config.vae,
+                                    config.general['state_shape'],
+                                    vae_path)
+
+    rnn = build_rnn_model(config.rnn,
+                          config.vae['latent_space_dim'],
+                          action_size,
+                          mdn_path)
+
+    vision = MDNVision(encoder, rnn.model, config.vae['latent_space_dim'],
+                       state_processor_fn=partial(
+                           state_processor,
+                           state_shape=config.general['state_shape'],
+                           crop_range=config.general['crop_range']))
+
+    # Build CMA-ES solver and linear model
+    _, mind = build_es_model(config.es,
+                             config.vae['latent_space_dim'] + config.rnn['hidden_units'],
+                             action_size,
+                             cma_path)
+
+    hist = hrl.loop(env, mind, vision,
+                    n_episodes=n_games, render_mode=config.allow_render, verbose=1,
+                    callbacks=[ReturnTracker(), vision])
+    print("Returns:", *hist['return'])
+    print("Avg. return:", np.mean(hist['return']))
 
 if __name__ == '__main__':
     cli()

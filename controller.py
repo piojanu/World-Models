@@ -121,7 +121,7 @@ class Evaluator(Worker):
                               self.action_size,
                               self.mdn_path)
 
-        # Resizes states to `state_shape` with cropping and encode to latent space
+        # Resizes states to `state_shape` with cropping and encode to latent space + hidden state
         return MDNVision(encoder, rnn.model, self.config.vae['latent_space_dim'],
                          state_processor_fn=partial(
                              state_processor,

@@ -39,7 +39,7 @@ class MDNVision(Vision, Callback):
     def process_state(self, state):
         # NOTE: [0][0] <- it gets first in the batch latent space mean (mu)
         latent = self.vae_model.predict(self.state_processor_fn(state)[np.newaxis, :])[0][0]
-        memory = self.mdn_model.hidden[0].detach().numpy()
+        memory = self.mdn_model.hidden[0].cpu().detach().numpy()
 
         return np.concatenate((latent, memory.flatten()))
 
