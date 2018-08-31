@@ -1,6 +1,9 @@
 click
-numpy
-scikit-image
-keras
-tensorflow
+cma
 h5py
+keras
+numpy
+pytorch
+scikit-image
+tensorflow
+tqdm

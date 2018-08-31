@@ -28,13 +28,13 @@ class MDNVision(Vision, Callback):
             In order to work, this Vision system must be also passed as callback to 'hrl.loop(...)'!
         """
 
-        # It will call `Vision` initialization
-        super(MDNVision, self).__init__(self.process_state)
-
         self.vae_model = vae_model
         self.mdn_model = mdn_model
         self.latent_dim = latent_dim
         self.state_processor_fn = state_processor_fn
+
+    def __call__(self, state, reward=0.):
+        return self.process_state(state), reward
 
     def process_state(self, state):
         # NOTE: [0][0] <- it gets first in the batch latent space mean (mu)

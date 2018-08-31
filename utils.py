@@ -1,11 +1,10 @@
 import json
-import logging as log
-
 import h5py as h5
 import numpy as np
 
 from keras.utils import Sequence
 from skimage.transform import resize
+from tqdm import tqdm
 
 
 class Config(object):
@@ -25,6 +24,7 @@ class Config(object):
 
         # Merging default and custom configs, for repeating keys second dict overwrites values
         self.general = {**default_config["general"], **custom_config.get("general", {})}
+        self.es = {**default_config["es_training"], **custom_config.get("es_training", {})}
         self.rnn = {**default_config["rnn_training"], **custom_config.get("rnn_training", {})}
         self.vae = {**default_config["vae_training"], **custom_config.get("vae_training", {})}
         self.is_debug = is_debug
@@ -100,14 +100,24 @@ class HDF5DataGenerator(Sequence):
         return X, y
 
 
+class TqdmStream(object):
+    @classmethod
+    def write(_, msg):
+        tqdm.write(msg, end='')
+
+    @classmethod
+    def flush(_):
+        pass
+
+
 def state_processor(img, state_shape, crop_range):
     """Resize states to `state_shape` with cropping of `crop_range`.
 
     Args:
         img (np.ndarray): Image to crop and resize.
         state_shape (tuple): Output shape. Default: [64, 64, 3]
-        crop_range (string): Range to crop as indices of array. Default: "[30:183, 28:131, :]"
 
+        crop_range (string): Range to crop as indices of array. Default: "[30:183, 28:131, :]"
     Return:
         np.ndarray: Cropped and reshaped to `state_shape` image.
     """
@@ -116,4 +126,4 @@ def state_processor(img, state_shape, crop_range):
     img = eval("img" + crop_range)
 
     # Resize to 64x64 and cast to 0..255 values if requested
-    return resize(img, state_shape) * 255
+    return resize(img, state_shape, mode='constant') * 255

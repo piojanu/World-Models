@@ -24,5 +24,14 @@
         "patience"         : 25,
         "ckpt_path"        : "./checkpoints_n_logs/best_memory.ckpt",
         "logs_dir"         : "./checkpoints_n_logs"
+    },
+    "es_training": {
+        "epochs"           : 300,
+        "popsize"          : 64,
+        "n_episodes"       : 5,
+        "processes"        : -1,
+        "l2_decay"         : 0.01,
+        "ckpt_path"        : "./checkpoints_n_logs/best_controller.ckpt",
+        "logs_dir"         : "./checkpoints_n_logs"
     }
 }

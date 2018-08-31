@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-import click
-import h5py as h5
 import datetime as dt
 import logging as log
-import numpy as np
 import os
+import click
+import h5py as h5
+import numpy as np
 import third_party.humblerl as hrl
 
 from functools import partial
-from memory import build_rnn_model, MDNVision, MDNDataset, StoreTrajectories2npz
 from third_party.humblerl.agents import RandomAgent
 from third_party.humblerl.callbacks import StoreTransitions2Hdf5
-from utils import Config, HDF5DataGenerator, state_processor
+from tqdm import tqdm
+from controller import build_es_model, Evaluator
+from memory import build_rnn_model, MDNDataset, StoreTrajectories2npz
+from utils import Config, HDF5DataGenerator, TqdmStream, state_processor
 from vision import build_vae_model, VAEVision
 
 
@@ -20,10 +22,18 @@ from vision import build_vae_model, VAEVision
 @click.option('-c', '--config_path', type=click.Path(exists=True), default="config.json",
               help="Path to configuration file (Default: config.json)")
 @click.option('--debug/--no-debug', default=False, help="Enable debug logging (Default: False)")
+@click.option('--quiet/--no-quiet', default=False, help="Disable info logging (Default: False)")
 @click.option('--render/--no-render', default=False, help="Allow to render/plot (Default: False)")
-def cli(ctx, config_path, debug, render):
+def cli(ctx, config_path, debug, quiet, render):
     # Get and set up logger level and formatter
-    log.basicConfig(level=log.DEBUG if debug else log.INFO, format="[%(levelname)s]: %(message)s")
+    if quiet:
+        level = log.ERROR
+    elif debug:
+        level = log.DEBUG
+    else:
+        level = log.INFO
+
+    log.basicConfig(level=level, format="[%(levelname)s]: %(message)s", stream=TqdmStream)
 
     # Load configuration from .json file into ctx object
     ctx.obj = Config(config_path, debug, render)
@@ -47,7 +57,10 @@ def record_vae(ctx, path, n_games, chunk_size, state_dtype):
         env.valid_actions, config.general['state_shape'], path, chunk_size=chunk_size, dtype=state_dtype)
 
     # Resizes states to `state_shape` with cropping
-    vision = hrl.Vision(partial(state_processor, state_shape=config.general['state_shape']))
+    vision = hrl.Vision(partial(
+        state_processor,
+        state_shape=config.general['state_shape'],
+        crop_range=config.general['crop_range']))
 
     # Play `N` random games and gather data as it goes
     hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])
@@ -170,7 +183,9 @@ def record_mem(ctx, path, model_path, n_games):
 
     # Resizes states to `state_shape` with cropping and encode to latent space
     vision = VAEVision(encoder, state_processor_fn=partial(
-        state_processor, state_shape=config.general['state_shape']))
+        state_processor,
+        state_shape=config.general['state_shape'],
+        crop_range=config.general['crop_range']))
 
     # Play `N` random games and gather data as it goes
     hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[store_callback])
@@ -204,7 +219,7 @@ def train_mem(ctx, path, vae_path):
     )
 
     # Build model
-    rnn = build_rnn_model(config.rnn, states.shape[3], np.max(actions) + 1)
+    rnn = build_rnn_model(config.rnn, states.shape[3], len(actions))
 
     # If render features enabled...
     if config.allow_render:
@@ -233,7 +248,7 @@ def train_mem(ctx, path, vae_path):
         S_next = states[0, 1:401, 0]
         A_eval = actions[0, :400]
 
-        # Evaluate VAE at the end of epoch
+        # Evaluate MDN-RNN at the end of epoch
         def plot_samples(epoch):
             rnn.model.init_hidden(1)
             mu, _, pi = rnn.model(torch.from_numpy(S_eval).view(1, 400, -1),
@@ -301,34 +316,58 @@ def train_mem(ctx, path, vae_path):
               help='Path to VAE ckpt. Taken from .json config if `None` (Default: None)')
 @click.option('-m', '--mdn_path', default=None,
               help='Path to MDN-RNN ckpt. Taken from .json config if `None` (Default: None)')
-@click.option('-n', '--n_games', default=10000, help='Number of games to play (Default: 10000)')
-def train_ctrl(ctx, vae_path, mdn_path, n_games):
+def train_ctrl(ctx, vae_path, mdn_path):
     """Plays chosen game and trains Controller on preprocessed states with VAE and MDN-RNN
     (loaded from `--vae_path` or `--mdn_path`)."""
 
     config = ctx.obj
 
-    # Create Gym environment, random agent and store to hdf5 callback
+    # Book keeping variables
+    best_return = float('-inf')
+
+    # Gen number of workers to run
+    processes = config.es['processes']
+    processes = processes if processes > 0 else None
+
+    # Get action space size
     env = hrl.create_gym(config.general['game_name'])
-    mind = RandomAgent(env.valid_actions)
+    action_size = len(env.valid_actions)
+    del env
 
-    # Build VAE model and load checkpoint
-    vae, encoder, _ = build_vae_model(config.vae,
-                                      config.general['state_shape'],
-                                      vae_path)
+    # Build CMA-ES solver and linear model
+    solver, _ = build_es_model(config.es,
+                               config.vae['latent_space_dim'] + config.rnn['hidden_units'],
+                               action_size)
 
-    # Build MDN-RNN model and load checkpoint
-    rnn = build_rnn_model(config.rnn,
-                          config.vae['latent_space_dim'],
-                          np.max(env.valid_actions) + 1,
-                          mdn_path)
+    # Train for N epochs
+    pbar = tqdm(range(config.es['epochs']), ascii=True)
+    for _ in pbar:
+        # Get new population
+        population = solver.ask()
 
-    # Resizes states to `state_shape` with cropping and encode to latent space
-    vision = MDNVision(encoder, rnn.model, config.vae['latent_space_dim'], state_processor_fn=partial(
-        state_processor, state_shape=config.general['state_shape']))
+        # Evaluate population in parallel
+        hists = hrl.pool(
+            Evaluator(config,
+                      config.vae['latent_space_dim'] + config.rnn['hidden_units'],
+                      action_size, vae_path, mdn_path),
+            jobs=population,
+            processes=processes,
+            n_episodes=config.es['n_episodes'],
+            verbose=0
+        )
+        returns = [np.mean(hist['return']) for hist in hists]
 
-    # Play `N` random games and train Controller in the go
-    hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=[vision])
+        # Print logs and update best return
+        pbar.set_postfix(best=best_return, current=max(returns))
+        best_return = max(best_return, max(returns))
+
+        # Update solver
+        solver.tell(returns)
+
+        if config.es['ckpt_path']:
+            # Save solver in given path
+            solver.save_ckpt(config.es['ckpt_path'])
+            log.debug("Saved checkpoint in path: %s", config.es['ckpt_path'])
 
 
 if __name__ == '__main__':
