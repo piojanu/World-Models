@@ -12,6 +12,8 @@ from third_party.torchtrainer import TorchTrainer
 from torch.distributions import Normal
 from torch.utils.data import Dataset
 
+from utils import get_model_path_if_exists
+
 
 class MDNVision(Vision, Callback):
     def __init__(self, vae_model, mdn_model, latent_dim, state_processor_fn):
@@ -240,14 +242,8 @@ def build_rnn_model(rnn_params, latent_dim, action_size, model_path=None):
     mdn.compile(optimizer=optim.Adam(mdn.model.parameters(), lr=rnn_params['learning_rate']),
                 loss=mdn_loss_function)
 
-    # Load checkpoint if available
-    if model_path is None:
-        if os.path.exists(rnn_params['ckpt_path']):
-            model_path = rnn_params['ckpt_path']
-        else:
-            log.info("MDN-RNN weights in \"{}\" doesn't exist! Starting tabula rasa.".format(model_path))
-    elif not os.path.exists(model_path):
-        raise ValueError("MDN-RNN weights in \"{}\" doesn't exist!".format(model_path))
+    model_path = get_model_path_if_exists(
+        path=model_path, default_path=rnn_params['ckpt_path'], model_name="MDN-RNN")
 
     if model_path is not None:
         mdn.load_ckpt(model_path)

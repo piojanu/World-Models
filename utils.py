@@ -1,6 +1,8 @@
 import json
 import h5py as h5
 import numpy as np
+import os
+import logging as log
 
 from keras.utils import Sequence
 from skimage.transform import resize
@@ -127,3 +129,24 @@ def state_processor(img, state_shape, crop_range):
 
     # Resize to 64x64 and cast to 0..255 values if requested
     return resize(img, state_shape, mode='constant') * 255
+
+
+def get_model_path_if_exists(path, default_path, model_name):
+    """Resize states to `state_shape` with cropping of `crop_range`.
+
+    Args:
+        path (string): Specified path to model
+        default_path (string): Specified path to model
+        model_name (string): Model name ie. VAE
+
+    Returns:
+        Path to model or None, depends whether first or second path exist
+    """
+    if path is None:
+        if os.path.exists(default_path):
+            path = default_path
+        else:
+            log.info("{} weights in \"{}\" doesn't exist! Starting tabula rasa.".format(model_name, path))
+    elif not os.path.exists(path):
+        raise ValueError("{} weights in \"{}\" path doesn't exist!".format(model_name, path))
+    return path

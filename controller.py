@@ -12,6 +12,8 @@ from memory import build_rnn_model, MDNVision
 from utils import state_processor
 from vision import build_vae_model
 
+from utils import get_model_path_if_exists
+
 
 def compute_ranks(x):
     """Computes fitness ranks in rage: [0, len(x))."""
@@ -77,7 +79,7 @@ class CMAES:
     def save_ckpt(self, path):
         with bz2.BZ2File(os.path.abspath(path), 'w') as f:
             pickle.dump(self, f)
-            
+
     @staticmethod
     def load_ckpt(path):
         with bz2.BZ2File(os.path.abspath(path), 'r') as f:
@@ -182,23 +184,18 @@ def build_es_model(es_params, input_dim, action_size, model_path=None):
 
     mind = LinearModel(input_dim, action_size)
 
-    # Load checkpoint if available
-    if model_path is None:
-        if os.path.exists(es_params['ckpt_path']):
-            solver = CMAES.load_ckpt(es_params['ckpt_path'])
-            log.info("Loaded CMA-ES parameters from: %s", es_params['ckpt_path'])
-        else:
-            solver = CMAES(mind.n_weights,
-                           popsize=es_params['popsize'],
-                           weight_decay=es_params['l2_decay'])
-            log.info("CMA-ES parameters in \"%s\" doesn't exist! "
-                     "Created solver with pop. size: %d and l2 decay: %f.",
-                     es_params['ckpt_path'], es_params['popsize'], es_params['l2_decay'])
-    elif os.path.exists(model_path):
+    model_path = get_model_path_if_exists(
+        path=model_path, default_path=es_params['ckpt_path'], model_name="CMA-ES")
+
+    if model_path is not None:
         solver = CMAES.load_ckpt(model_path)
         log.info("Loaded CMA-ES parameters from: %s", model_path)
     else:
-        raise ValueError("MDN-RNN weights in \"{}\" doesn't exist!".format(model_path))
+        solver = CMAES(
+            mind.n_weights, popsize=es_params['popsize'], weight_decay=es_params['l2_decay'])
+        log.info("CMA-ES parameters in \"%s\" doesn't exist! ",
+                 "Created solver with pop. size: %d and l2 decay: %f.",
+                 es_params['ckpt_path'], es_params['popsize'], es_params['l2_decay'])
 
     mind.set_weights(solver.current_param())
     return solver, mind

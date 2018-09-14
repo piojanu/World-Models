@@ -9,6 +9,8 @@ from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda,
 from keras.models import Model
 from keras.optimizers import Adam
 
+from utils import get_model_path_if_exists
+
 
 class VAEVision(Vision):
     def __init__(self, model, state_processor_fn):
@@ -120,14 +122,8 @@ def build_vae_model(vae_params, input_shape, model_path=None):
     vae.compile(optimizer=Adam(lr=vae_params['learning_rate']), loss=elbo_loss)
     vae.summary(print_fn=lambda x: log.debug('%s', x))
 
-    # Load checkpoint if available
-    if model_path is None:
-        if os.path.exists(vae_params['ckpt_path']):
-            model_path = vae_params['ckpt_path']
-        else:
-            log.info("VAE weights in \"{}\" doesn't exist! Starting tabula rasa.".format(model_path))
-    elif not os.path.exists(model_path):
-        raise ValueError("VAE weights in \"{}\" path doesn't exist!".format(model_path))
+    model_path = get_model_path_if_exists(
+        path=model_path, default_path=vae_params['ckpt_path'], model_name="VAE")
 
     if model_path is not None:
         vae.load_weights(model_path)
