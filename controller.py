@@ -3,6 +3,7 @@ import logging as log
 import numpy as np
 import os.path
 import pickle
+import bz2
 import third_party.humblerl as hrl
 
 from functools import partial
@@ -74,11 +75,13 @@ class CMAES:
         return self.es.result[0]  # best evaluated solution
 
     def save_ckpt(self, path):
-        pickle.dump(self, open(os.path.abspath(path), 'wb'))
-
+        with bz2.BZ2File(os.path.abspath(path), 'w') as f:
+            pickle.dump(self, f)
+            
     @staticmethod
     def load_ckpt(path):
-        return pickle.load(open(os.path.abspath(path), 'rb'))
+        with bz2.BZ2File(os.path.abspath(path), 'r') as f:
+            return pickle.load(f)
 
 
 class Evaluator(Worker):
