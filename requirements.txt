@@ -1,0 +1,20 @@
+click==6.7
+cma==2.6.0
+h5py==2.8.0
+imageio==2.4.1
+keras==2.2.4
+matplotlib==2.2.3
+numpy==1.15.3
+pandas==0.23.3
+pillow==5.2.0
+pytest==3.4.0
+scikit-optimize==0.5.2
+scikit_image==0.13.1
+scikit_learn==0.20.0
+scipy==1.1.0
+setuptools==36.2.7
+tabulate==0.8.2
+tensorflow==1.9.0
+torch==0.4.1
+tqdm==4.23.4
+-e git+https://github.com/piojanu/humblerl.git@6cc82b25f19da3d3090d7983801cc7aa8cace154#egg=humblerl
