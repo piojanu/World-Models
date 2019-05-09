@@ -6,16 +6,16 @@ import os
 import click
 import h5py as h5
 import humblerl as hrl
-from humblerl.agents import ChainVision
+from humblerl.agents import ChainInterpreter
 import numpy as np
 from tqdm import tqdm
 
 from common_utils import TqdmStream, obtain_config, mute_tf_logs_if_needed, create_directory
 from controller import build_es_model, build_mind, Evaluator, ReturnTracker
-from memory import build_rnn_model, MDNDataset, MDNVision
+from memory import build_rnn_model, MDNDataset, MDNInterpreter
 from utils import Config, StoreTransitions, create_generating_agent
 from utils import HDF5DataGenerator, convert_data_with_vae, MemoryVisualization
-from vision import BasicVision, build_vae_model
+from vision import BasicInterpreter, build_vae_model
 
 
 @click.group()
@@ -73,14 +73,14 @@ def record_data(ctx, path, n_games, chunk_size, state_dtype):
         n_games = diff
 
     # Resizes states to `state_shape` with cropping
-    vision = BasicVision(
+    interpreter = BasicInterpreter(
         state_shape=config.general['state_shape'],
         crop_range=config.general['crop_range'],
         scale=255
     )
 
     # Play `N` random games and gather data as it goes
-    hrl.loop(env, mind, vision, n_episodes=n_games, verbose=1, callbacks=callbacks,
+    hrl.loop(env, mind, interpreter, n_episodes=n_games, verbose=1, callbacks=callbacks,
              render_mode=config.allow_render)
 
 
@@ -146,7 +146,7 @@ def train_vae(ctx, path):
             # Save figure to logs dir
             plt.savefig(os.path.join(
                 plots_dir,
-                "vision_sample_{}".format(dt.datetime.now().strftime("%d-%mT%H:%M"))
+                "interpreter_sample_{}".format(dt.datetime.now().strftime("%d-%mT%H:%M"))
             ))
             plt.close()
     else:
@@ -345,7 +345,7 @@ def eval(ctx, controller_path, vae_path, mdn_path, n_games):
     # Get action space size
     env = hrl.create_gym(config.general['game_name'])
 
-    # Create VAE + MDN-RNN vision
+    # Create VAE + MDN-RNN interpreter
     _, encoder, _ = build_vae_model(config.vae,
                                     config.general['state_shape'],
                                     vae_path)
@@ -355,9 +355,9 @@ def eval(ctx, controller_path, vae_path, mdn_path, n_games):
                           env.action_space,
                           mdn_path)
 
-    basic_vision = BasicVision(state_shape=config.general['state_shape'],
-                               crop_range=config.general['crop_range'])
-    mdn_vision = MDNVision(encoder, rnn.model, config.vae['latent_space_dim'])
+    basic_interpreter = BasicInterpreter(state_shape=config.general['state_shape'],
+                                         crop_range=config.general['crop_range'])
+    mdn_interpreter = MDNInterpreter(encoder, rnn.model, config.vae['latent_space_dim'])
 
     # Build CMA-ES solver and linear model
     mind = build_mind(config.es,
@@ -365,9 +365,9 @@ def eval(ctx, controller_path, vae_path, mdn_path, n_games):
                       env.action_space,
                       controller_path)
 
-    hist = hrl.loop(env, mind, ChainVision(basic_vision, mdn_vision),
+    hist = hrl.loop(env, mind, ChainInterpreter(basic_interpreter, mdn_interpreter),
                     n_episodes=n_games, render_mode=config.allow_render, verbose=1,
-                    callbacks=[ReturnTracker(), mdn_vision])
+                    callbacks=[ReturnTracker(), mdn_interpreter])
 
     print("Returns:", *hist['return'])
     print("Avg. return:", np.mean(hist['return']))

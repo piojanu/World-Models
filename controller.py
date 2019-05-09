@@ -5,9 +5,9 @@ import os.path
 import pickle
 import humblerl as hrl
 
-from humblerl import ChainVision, Mind, Worker
-from memory import build_rnn_model, MDNVision
-from vision import BasicVision, build_vae_model
+from humblerl import ChainInterpreter, Mind, Worker
+from memory import build_rnn_model, MDNInterpreter
+from vision import BasicInterpreter, build_vae_model
 
 from common_utils import ReturnTracker, create_directory, get_model_path_if_exists
 
@@ -100,12 +100,12 @@ class Evaluator(Worker):
         self.mdn_path = mdn_path
 
         self._env = None
-        self._basic_vision = None
-        self._mdn_vision = None
+        self._basic_interpreter = None
+        self._mdn_interpreter = None
 
     def initialize(self):
         self._env = hrl.create_gym(self.config.general['game_name'])
-        self._basic_vision, self._mdn_vision = self._vision_factory()
+        self._basic_interpreter, self._mdn_interpreter = self._interpreter_factory()
 
     def mind_factory(self, weights):
         mind = LinearModel(self.state_size, self.action_space)
@@ -114,13 +114,13 @@ class Evaluator(Worker):
 
     @property
     def callbacks(self):
-        return [ReturnTracker(), self._mdn_vision]
+        return [ReturnTracker(), self._mdn_interpreter]
 
     @property
-    def vision(self):
-        return ChainVision(self._basic_vision, self._mdn_vision)
+    def interpreter(self):
+        return ChainInterpreter(self._basic_interpreter, self._mdn_interpreter)
 
-    def _vision_factory(self):
+    def _interpreter_factory(self):
         # Build VAE model and load checkpoint
         _, encoder, _ = build_vae_model(self.config.vae,
                                         self.config.general['state_shape'],
@@ -132,10 +132,10 @@ class Evaluator(Worker):
                               self.action_space,
                               self.mdn_path)
 
-        return (BasicVision(
+        return (BasicInterpreter(
             state_shape=self.config.general['state_shape'],
             crop_range=self.config.general['crop_range']),
-            MDNVision(encoder, rnn.model, self.config.vae['latent_space_dim']))
+            MDNInterpreter(encoder, rnn.model, self.config.vae['latent_space_dim']))
 
 
 class LinearModel(Mind):
@@ -174,7 +174,7 @@ def build_mind(es_params, input_dim, action_space, model_path):
 
     Args:
         es_params (dict): CMA-ES training parameters from .json config.
-        input_dim (int): Should be vision latent space dim. + memory hidden state size.
+        input_dim (int): Should be interpreter latent space dim. + memory hidden state size.
         action_space (hrl.environments.ActionSpace): Action space, discrete or continuous.
         model_path (str): Path to Mind weights.
 

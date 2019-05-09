@@ -3,7 +3,7 @@ import logging as log
 import numpy as np
 import h5py
 import humblerl as hrl
-from humblerl import Callback, Vision
+from humblerl import Callback, Interpreter
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,7 +14,7 @@ from common_utils import get_model_path_if_exists
 from third_party.torchtrainer import TorchTrainer, evaluate
 
 
-class MDNVision(Vision, Callback):
+class MDNInterpreter(Interpreter, Callback):
     """Performs state preprocessing with VAE module and concatenates it with hidden state of MDN module.
 
     Args:
@@ -23,7 +23,7 @@ class MDNVision(Vision, Callback):
         latent_dim (int): Latent space dimensionality.
 
     Note:
-        In order to work, this Vision system must be also passed as callback to 'hrl.loop(...)'!
+        In order to work, this Interpreter system must be also passed as callback to 'hrl.loop(...)'!
     """
 
     def __init__(self, vae_model, mdn_model, latent_dim):
@@ -40,7 +40,7 @@ class MDNVision(Vision, Callback):
         memory = self.mdn_model.hidden[0].cpu().detach().numpy()
 
         # NOTE: See HRL `ply`, `on_step_taken` that would update hidden state is called AFTER
-        #       Vision is used to preprocess next_state. So next_state has out-dated hidden state!
+        #       Interpreter is used to preprocess next_state. So next_state has out-dated hidden state!
         #       What saves us is the fact, that `state` in next `ply` call will have it updated so,
         #       Transitions.state has up-to-date latent and hidden state and in all the other places
         #       exactly it is used, not next state.

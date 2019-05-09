@@ -17,4 +17,4 @@ tabulate==0.8.2
 tensorflow==1.9.0
 torch==0.4.1
 tqdm==4.23.4
--e git+https://github.com/piojanu/humblerl.git@6cc82b25f19da3d3090d7983801cc7aa8cace154#egg=humblerl
+-e git+https://github.com/piojanu/humblerl.git@79900c4087450711ca5e52063e75d081cc99e34c#egg=humblerl
