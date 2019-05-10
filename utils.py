@@ -415,7 +415,7 @@ class MemoryVisualization(TorchCallback):
         config (Config): Configuration loaded json .from file.
         vae_decoder (keras.models.Model): Vision decoder Keras model.
         mem_model (torch.nn.Module): PyTorch memory module.
-        dataset (torch.utils.data.Dataset): PyTroch dataset with data from ExperienceStorage.
+        dataset (torch.utils.data.Dataset): PyTorch dataset with data from ExperienceStorage.
         dir_name (string): Directory name where plots will be saved. (Default: 'plots')
     """
 

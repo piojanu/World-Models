@@ -1,6 +1,6 @@
 import logging as log
 
-from humblerl import Vision
+from humblerl import Interpreter
 import keras.backend as K
 from keras.layers import Conv2D, Conv2DTranspose, Dense, Flatten, Input, Lambda, Reshape
 from keras.models import Model
@@ -10,9 +10,9 @@ from skimage.transform import resize
 from common_utils import get_model_path_if_exists
 
 
-class BasicVision(Vision):
+class BasicInterpreter(Interpreter):
     def __init__(self, state_shape, crop_range, scale=1):
-        """Initialize vision processors.
+        """Initialize interpreter processors.
 
         Args:
             state_shape (tuple): Output shape.
